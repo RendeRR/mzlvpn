@@ -1,0 +1,6 @@
+{
+  "name": "Mozilla VPN Lite — Android Client",
+  "description": "Минималистичный Android-клиент для Mozilla VPN на базе протокола arman-vpn-client: быстрое переключение профилей Firefox Account, авто-ротация по квоте и выбор локаций.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
