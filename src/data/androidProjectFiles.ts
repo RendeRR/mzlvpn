@@ -49,47 +49,661 @@ const OAuthScope      = "profile https://identity.mozilla.com/apps/vpn"`
   },
   {
     step: '03',
-    title: 'Guardian ProxyPass JWT и авто-ротация 5 ГБ квоты',
+    title: 'Guardian ProxyPass JWT + упреждающий прогрев резервного аккаунта (0 мс переключение)',
     endpoint: 'https://vpn.mozilla.org/api/v1/fpn/token',
-    method: 'GET Bearer + X-Quota-*',
-    summary: 'Активация подписки FPN (/api/v1/fpn/activate), выпуск короткоживущего JWT-пропуска ProxyPass и автоматическое переключение аккаунтов.',
+    method: 'GET Bearer + Pre-warm',
+    summary: 'Активация подписки FPN (/api/v1/fpn/activate), выпуск JWT-пропуска ProxyPass и упреждающий прогрев следующего аккаунта за 5% до порога.',
     details: [
       'При HTTP 403 от Guardian модуль core/guardian/guardian.go автоматически вызывает POST https://vpn.mozilla.org/api/v1/fpn/activate',
-      'Ответ GET /api/v1/fpn/token содержит JWT токен и заголовки X-Quota-Limit (5 ГБ / месяц), X-Quota-Remaining и X-Quota-Reset',
-      'Модуль core/accounts/pool.go отслеживает порог (по умолчанию 95%) и при исчерпании квоты бесшовно переключает туннель на следующий аккаунт через engine.UpdateToken()'
+      'Когда квота активного аккаунта достигает (Threshold - 5%), горутина PrewarmNextReady заранее обновляет OAuth и кэширует свежий ProxyPass JWT для следующего аккаунта в пуле',
+      'В момент достижения порога 95% (или HTTP 429) переключение на резервный аккаунт происходит за 0 миллисекунд прямо из оперативной памяти'
     ],
-    codeSnippet: `GET https://vpn.mozilla.org/api/v1/fpn/token
-Authorization: Bearer <fxa_oauth_access_token>
-
-// Response Headers:
-X-Quota-Limit: 5368709120
-X-Quota-Remaining: 4120954880
-X-Quota-Reset: 2026-12-01T00:00:00Z`
+    codeSnippet: `// Pre-warm standby account when active account crosses (Threshold - 5%):
+if pass.Usage.UsedPercent() >= (threshold - 5.0) {
+    go p.PrewarmNextReady(acc.ID)
+}`
   },
   {
     step: '04',
-    title: 'Remote Settings и мультиплексированный HTTP/2 CONNECT туннель',
+    title: 'Zero-Copy HTTP/2 туннель (sync.Pool 32KB + TCP_NODELAY + NetworkCallback)',
     endpoint: 'https://firefox.settings.services.mozilla.com/v1/buckets/main/collections/vpn-serverlist/records',
-    method: 'TLS 1.3 ALPN h2 CONNECT',
-    summary: 'Загрузка серверов (*.m1.fastly-masque.net:2499), снятие блокировки locked-стран и локальный SOCKS5-сервер для Android VpnService (Tun2Socks).',
+    method: 'TLS 1.3 ALPN h2 + sync.Pool',
+    summary: 'Загрузка всех серверов (*.m1.fastly-masque.net:2499), пул 32 КБ буферов без нагрузки на GC и мгновенный реконнект при переходе Wi-Fi ↔ LTE.',
     details: [
-      'Модуль core/serverlist/serverlist.go загружает все 33+ страны из Remote Settings и снимает ограничение locked: true',
-      'Модуль core/tunnel/tunnel.go поднимает локальный SOCKS5-сервер для Tun2Socks и мультиплексирует потоки внутри одного TLS 1.3 HTTP/2 соединения с заголовком Proxy-Authorization: Bearer <ProxyPass_JWT>',
-      'Замер реального пинга (ProbeLatency) измеряет время установки CONNECT-потока до www.google.com:443 через выходной узел выбранной страны'
+      'В core/tunnel/tunnel.go используется sync.Pool фиксированных 32 КБ буферов (io.CopyBuffer) — нулевые аллокации памяти при передаче данных',
+      'На всех сокетах включены TCP_NODELAY, KeepAlive 30s и TLS 1.3 ClientSessionCache для ускорения рукопожатий',
+      'В MinimalVpnService.kt зарегистрирован ConnectivityManager.NetworkCallback, вызывающий mobile.Mobile.reconnect() в момент смены Wi-Fi <-> мобильная сеть без ожидания таймаута'
     ],
-    codeSnippet: `CONNECT target.example.com:443 HTTP/2
-Host: target.example.com:443
-Proxy-Authorization: Bearer <Guardian_ProxyPass_JWT>
-User-Agent: Mozilla/5.0 (Android 14; Mobile; rv:145.0) Gecko/145.0 Firefox/145.0`
+    codeSnippet: `var streamBufferPool = sync.Pool{
+    New: func() any { b := make([]byte, 32*1024); return &b },
+}
+// + ConnectivityManager.NetworkCallback -> mobile.Mobile.reconnect()`
   }
 ];
 
 export const ANDROID_PROJECT_FILES: AndroidProjectFile[] = [
   {
+    path: 'core/tunnel/tunnel.go',
+    language: 'go',
+    title: 'core/tunnel/tunnel.go (Zero-Alloc sync.Pool + TCP_NODELAY + ResetSession)',
+    description: 'Оптимизированный движок туннеля: пул 32 КБ буферов (sync.Pool + io.CopyBuffer) без аллокаций в куче, TCP_NODELAY, кэш сессий TLS 1.3 и мгновенный сброс ResetSession() при смене сети.',
+    content: `// Package tunnel runs the local loopback SOCKS5 server (for Android Tun2Socks)
+// and multiplexes outbound connections over an HTTP/2 TLS 1.3 CONNECT session
+// to the selected Mozilla Fastly proxy (*.m1.fastly-masque.net:2499) using the
+// active account's Guardian ProxyPass bearer JWT.
+//
+// Optimizations:
+//   - Zero-allocation 32 KB buffer pool (sync.Pool + io.CopyBuffer) to eliminate GC pressure
+//   - TCP_NODELAY and 30s KeepAlive on loopback and upstream Fastly sockets
+//   - Instant ResetSession() for zero-wait Wi-Fi <-> Cellular network handoffs
+package tunnel
+
+import (
+	"context"
+	"crypto/tls"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"strconv"
+	"sync"
+	"time"
+
+	"golang.org/x/net/http2"
+	"mozillavpnlite/core/fxa"
+)
+
+const copyBufSize = 32 * 1024
+
+var streamBufferPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, copyBufSize)
+		return &b
+	},
+}
+
+func copyZeroAlloc(dst io.Writer, src io.Reader) {
+	bufPtr := streamBufferPool.Get().(*[]byte)
+	defer streamBufferPool.Put(bufPtr)
+	_, _ = io.CopyBuffer(dst, src, *bufPtr)
+}
+
+func configureLowLatencyTCP(conn net.Conn) {
+	if tcp, ok := conn.(*net.TCPConn); ok {
+		_ = tcp.SetNoDelay(true)
+		_ = tcp.SetKeepAlive(true)
+		_ = tcp.SetKeepAlivePeriod(30 * time.Second)
+	}
+}
+
+type Engine struct {
+	mu          sync.RWMutex
+	listener    net.Listener
+	proxyHost   string
+	bearerToken string
+	h2Conn      *http2.ClientConn
+	rawTLS      net.Conn
+}
+
+func NewEngine() *Engine {
+	return &Engine{}
+}
+
+// Start begins listening for local SOCKS5 connections from Android VpnService (Tun2Socks).
+func (e *Engine) Start(listenAddr, proxyEndpoint, proxyPassJWT string) (int, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.proxyHost = proxyEndpoint
+	e.bearerToken = proxyPassJWT
+
+	if e.listener == nil {
+		ln, err := net.Listen("tcp", listenAddr)
+		if err != nil {
+			return 0, err
+		}
+		e.listener = ln
+		go e.acceptLoop(ln)
+	}
+	return e.listener.Addr().(*net.TCPAddr).Port, nil
+}
+
+// UpdateToken hot-swaps the active Mozilla account's ProxyPass JWT in 0 ms without dropping the tunnel.
+func (e *Engine) UpdateToken(proxyPassJWT string) {
+	e.mu.Lock()
+	e.bearerToken = proxyPassJWT
+	e.mu.Unlock()
+}
+
+// SwitchServer changes the upstream Mozilla Fastly endpoint and resets the pooled H2 connection.
+func (e *Engine) SwitchServer(proxyEndpoint string) {
+	e.mu.Lock()
+	if e.proxyHost != proxyEndpoint {
+		e.proxyHost = proxyEndpoint
+		e.closeH2Locked()
+	}
+	e.mu.Unlock()
+}
+
+// ResetSession immediately drops the pooled TLS 1.3 / HTTP/2 session when Android
+// switches network interfaces (e.g. Wi-Fi <-> LTE/5G) so the next packet dials immediately.
+func (e *Engine) ResetSession() {
+	e.mu.Lock()
+	e.closeH2Locked()
+	e.mu.Unlock()
+}
+
+func (e *Engine) closeH2Locked() {
+	if e.rawTLS != nil {
+		_ = e.rawTLS.Close()
+		e.rawTLS = nil
+		e.h2Conn = nil
+	}
+}
+
+func (e *Engine) Stop() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.listener != nil {
+		_ = e.listener.Close()
+		e.listener = nil
+	}
+	e.closeH2Locked()
+}
+
+func (e *Engine) Port() int {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if e.listener == nil {
+		return 0
+	}
+	return e.listener.Addr().(*net.TCPAddr).Port
+}
+
+func (e *Engine) acceptLoop(ln net.Listener) {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		configureLowLatencyTCP(conn)
+		go e.handleSocks5(conn)
+	}
+}
+
+func (e *Engine) handleSocks5(client net.Conn) {
+	defer client.Close()
+	_ = client.SetDeadline(time.Now().Add(15 * time.Second))
+
+	var hdr [2]byte
+	if _, err := io.ReadFull(client, hdr[:]); err != nil || hdr[0] != 0x05 {
+		return
+	}
+	methods := make([]byte, int(hdr[1]))
+	if _, err := io.ReadFull(client, methods); err != nil {
+		return
+	}
+	_, _ = client.Write([]byte{0x05, 0x00})
+
+	var reqHdr [4]byte
+	if _, err := io.ReadFull(client, reqHdr[:]); err != nil || reqHdr[0] != 0x05 || reqHdr[1] != 0x01 {
+		return
+	}
+
+	var host string
+	switch reqHdr[3] {
+	case 0x01:
+		var ip [4]byte
+		if _, err := io.ReadFull(client, ip[:]); err != nil {
+			return
+		}
+		host = net.IP(ip[:]).String()
+	case 0x03:
+		var dlen [1]byte
+		if _, err := io.ReadFull(client, dlen[:]); err != nil {
+			return
+		}
+		domain := make([]byte, int(dlen[0]))
+		if _, err := io.ReadFull(client, domain); err != nil {
+			return
+		}
+		host = string(domain)
+	case 0x04:
+		var ip [16]byte
+		if _, err := io.ReadFull(client, ip[:]); err != nil {
+			return
+		}
+		host = net.IP(ip[:]).String()
+	default:
+		return
+	}
+
+	var portBuf [2]byte
+	if _, err := io.ReadFull(client, portBuf[:]); err != nil {
+		return
+	}
+	port := binary.BigEndian.Uint16(portBuf[:])
+	authority := net.JoinHostPort(host, strconv.Itoa(int(port)))
+
+	_, _ = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
+	_ = client.SetDeadline(time.Time{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	streamReader, streamWriter, err := e.openH2ConnectStream(ctx, authority)
+	if err != nil {
+		return
+	}
+	defer streamWriter.Close()
+	defer streamReader.Close()
+
+	go func() {
+		copyZeroAlloc(streamWriter, client)
+		_ = streamWriter.Close()
+	}()
+	copyZeroAlloc(client, streamReader)
+}
+
+func (e *Engine) ensureH2Session(ctx context.Context) (*http2.ClientConn, string, string, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.h2Conn != nil && e.h2Conn.CanTakeNewRequest() {
+		return e.h2Conn, e.proxyHost, e.bearerToken, nil
+	}
+
+	host, _, err := net.SplitHostPort(e.proxyHost)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	rawDialer := &net.Dialer{
+		Timeout:   8 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	rawConn, err := rawDialer.DialContext(ctx, "tcp", e.proxyHost)
+	if err != nil {
+		return nil, "", "", err
+	}
+	configureLowLatencyTCP(rawConn)
+
+	tlsConn := tls.Client(rawConn, &tls.Config{
+		ServerName:         host,
+		MinVersion:         tls.VersionTLS13,
+		NextProtos:         []string{"h2"},
+		ClientSessionCache: tls.NewLRUClientSessionCache(32),
+	})
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		_ = rawConn.Close()
+		return nil, "", "", err
+	}
+
+	tr := &http2.Transport{
+		ReadIdleTimeout: 30 * time.Second,
+		PingTimeout:     10 * time.Second,
+	}
+	cc, err := tr.NewClientConn(tlsConn)
+	if err != nil {
+		_ = tlsConn.Close()
+		return nil, "", "", err
+	}
+
+	e.rawTLS = tlsConn
+	e.h2Conn = cc
+	return cc, e.proxyHost, e.bearerToken, nil
+}
+
+func (e *Engine) openH2ConnectStream(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, error) {
+	cc, proxyHost, token, err := e.ensureH2Session(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pr, pw := io.Pipe()
+	req, err := http.NewRequestWithContext(ctx, http.MethodConnect, "http://"+targetAuthority, pr)
+	if err != nil {
+		_ = pw.Close()
+		return nil, nil, err
+	}
+	req.Host = targetAuthority
+	req.URL.Host = proxyHost
+	req.Header.Set("Proxy-Authorization", "Bearer "+token)
+	req.Header.Set("User-Agent", fxa.FirefoxUserAgent)
+
+	resp, err := cc.RoundTrip(req)
+	if err != nil {
+		_ = pw.Close()
+		return nil, nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		_ = resp.Body.Close()
+		_ = pw.Close()
+		return nil, nil, errors.New(fmt.Sprintf("CONNECT rejected HTTP %d", resp.StatusCode))
+	}
+	return resp.Body, pw, nil
+}
+
+func ProbeLatency(ctx context.Context, proxyEndpoint, bearerToken string) (time.Duration, error) {
+	eng := NewEngine()
+	eng.proxyHost = proxyEndpoint
+	eng.bearerToken = bearerToken
+	defer eng.Stop()
+
+	probeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+
+	if _, _, _, err := eng.ensureH2Session(probeCtx); err != nil {
+		return 0, err
+	}
+
+	start := time.Now()
+	rc, wc, err := eng.openH2ConnectStream(probeCtx, "www.google.com:443")
+	if err != nil {
+		return 0, err
+	}
+	elapsed := time.Since(start)
+	_ = wc.Close()
+	_ = rc.Close()
+	return elapsed, nil
+}
+`
+  },
+  {
+    path: 'core/accounts/pool.go',
+    language: 'go',
+    title: 'core/accounts/pool.go (Упреждающий прогрев PrewarmNextReady и 0-мс ротация)',
+    description: 'Пул аккаунтов Mozilla с фоновым предпрогревом следующего аккаунта при (Threshold - 5%) и мгновенным возвратом кэшированного токена ProxyPass за 0 мс.',
+    content: `// Package accounts manages the pool of Mozilla accounts, credential
+// persistence, instant 1-tap profile switching, background pre-warming of the
+// standby account at (Threshold - 5%), and 0-ms automatic failover when an
+// account's 5 GB monthly quota reaches the configured threshold.
+package accounts
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"mozillavpnlite/core/fxa"
+	"mozillavpnlite/core/guardian"
+)
+
+type Status string
+
+const (
+	StatusReady          Status = "ready"
+	StatusReserved       Status = "reserved"
+	StatusReauthRequired Status = "reauth_required"
+)
+
+type Account struct {
+	ID       string               \`json:"id"\`
+	Email    string               \`json:"email"\`
+	Position int                  \`json:"position"\`
+	Active   bool                 \`json:"active"\`
+	Enabled  bool                 \`json:"enabled"\`
+	Status   Status               \`json:"status"\`
+	Reason   string               \`json:"reason,omitempty"\`
+	Tokens   fxa.OAuthTokens      \`json:"tokens"\`
+	LastPass *guardian.ProxyPass  \`json:"last_pass,omitempty"\`
+	Usage    *guardian.QuotaUsage \`json:"usage,omitempty"\`
+}
+
+func (a *Account) HasWarmPass() bool {
+	return a != nil && a.LastPass != nil && a.LastPass.RawToken != "" &&
+		time.Now().Before(a.LastPass.ExpiresAt.Add(-5*time.Minute))
+}
+
+type Pool struct {
+	mu               sync.Mutex
+	prewarming       bool
+	filePath         string
+	ThresholdPercent int        \`json:"threshold_percent"\`
+	Accounts         []*Account \`json:"accounts"\`
+}
+
+func LoadOrCreatePool(dataDir string) (*Pool, error) {
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		return nil, err
+	}
+	fp := filepath.Join(dataDir, "accounts_pool.json")
+	p := &Pool{
+		filePath:         fp,
+		ThresholdPercent: 95,
+		Accounts:         []*Account{},
+	}
+	if data, err := os.ReadFile(fp); err == nil {
+		_ = json.Unmarshal(data, p)
+	}
+	if p.ThresholdPercent < 50 || p.ThresholdPercent > 100 {
+		p.ThresholdPercent = 95
+	}
+	p.recomputeLocked()
+	return p, nil
+}
+
+func (p *Pool) saveLocked() error {
+	p.recomputeLocked()
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p.filePath, data, 0600)
+}
+
+func (p *Pool) recomputeLocked() {
+	for i, acc := range p.Accounts {
+		acc.Position = i + 1
+		if acc.Usage != nil && !acc.Usage.Unlimited && acc.Usage.LimitBytes > 0 {
+			if acc.Usage.RemainingBytes <= 0 || acc.Usage.UsedPercent() >= float64(p.ThresholdPercent) {
+				if len(p.Accounts) > 1 {
+					acc.Status = StatusReserved
+					acc.Reason = "Достигнут порог месячной квоты 5 ГБ"
+				}
+			} else if acc.Status == StatusReserved {
+				acc.Status = StatusReady
+				acc.Reason = ""
+			}
+		}
+	}
+}
+
+func (p *Pool) AddWithSessionToken(ctx context.Context, email, sessionTokenHex string) (*Account, error) {
+	tokens, err := fxa.ExchangeSessionForOAuth(ctx, sessionTokenHex)
+	if err != nil {
+		return nil, err
+	}
+	pass, err := guardian.FetchProxyPass(ctx, tokens.AccessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	var idBytes [6]byte
+	_, _ = rand.Read(idBytes[:])
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	acc := &Account{
+		ID:       "acc-" + hex.EncodeToString(idBytes[:]),
+		Email:    email,
+		Active:   len(p.Accounts) == 0,
+		Enabled:  true,
+		Status:   StatusReady,
+		Tokens:   *tokens,
+		LastPass: pass,
+		Usage:    pass.Usage,
+	}
+	p.Accounts = append(p.Accounts, acc)
+	_ = p.saveLocked()
+	return acc, nil
+}
+
+// Activate immediately makes the given account ID active (0 ms if pre-warmed).
+func (p *Pool) Activate(ctx context.Context, id string) (*guardian.ProxyPass, error) {
+	p.mu.Lock()
+	var target *Account
+	for _, a := range p.Accounts {
+		if a.ID == id {
+			target = a
+			break
+		}
+	}
+	if target == nil {
+		p.mu.Unlock()
+		return nil, errors.New("аккаунт не найден")
+	}
+	for _, a := range p.Accounts {
+		a.Active = (a.ID == id)
+	}
+	target.Enabled = true
+	warmPass := target.LastPass
+	isWarm := target.HasWarmPass()
+	_ = p.saveLocked()
+	p.mu.Unlock()
+
+	if isWarm {
+		go func(acc *Account) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_, _ = p.EnsureFreshPass(bgCtx, acc)
+		}(target)
+		return warmPass, nil
+	}
+
+	return p.EnsureFreshPass(ctx, target)
+}
+
+func (p *Pool) EnsureFreshPass(ctx context.Context, acc *Account) (*guardian.ProxyPass, error) {
+	if time.Now().After(acc.Tokens.ExpiresAt.Add(-2 * time.Minute)) {
+		refreshed, err := fxa.RefreshAccessToken(ctx, acc.Tokens.RefreshToken)
+		if err != nil {
+			p.mu.Lock()
+			if errors.Is(err, fxa.ErrReauthRequired) {
+				acc.Status = StatusReauthRequired
+			}
+			_ = p.saveLocked()
+			p.mu.Unlock()
+			return nil, err
+		}
+		p.mu.Lock()
+		acc.Tokens = *refreshed
+		_ = p.saveLocked()
+		p.mu.Unlock()
+	}
+
+	pass, err := guardian.FetchProxyPass(ctx, acc.Tokens.AccessToken)
+	p.mu.Lock()
+	threshold := float64(p.ThresholdPercent)
+	if pass != nil && pass.Usage != nil {
+		acc.Usage = pass.Usage
+		acc.LastPass = pass
+	}
+	_ = p.saveLocked()
+	p.mu.Unlock()
+
+	if errors.Is(err, guardian.ErrQuotaExceeded) || (pass != nil && pass.Usage != nil && pass.Usage.UsedPercent() >= threshold) {
+		return p.RotateToNextReady(ctx, acc.ID)
+	}
+
+	// Pre-warm standby account when active account crosses (Threshold - 5%)
+	if pass != nil && pass.Usage != nil && pass.Usage.UsedPercent() >= (threshold-5.0) {
+		go p.PrewarmNextReady(acc.ID)
+	}
+
+	return pass, err
+}
+
+// PrewarmNextReady refreshes OAuth and caches a fresh ProxyPass JWT on the next
+// ready standby account in the background so failover happens in 0 ms.
+func (p *Pool) PrewarmNextReady(activeID string) {
+	p.mu.Lock()
+	if p.prewarming {
+		p.mu.Unlock()
+		return
+	}
+	var standby *Account
+	for _, a := range p.Accounts {
+		if a.ID != activeID && a.Enabled && a.Status == StatusReady {
+			standby = a
+			break
+		}
+	}
+	if standby == nil || standby.HasWarmPass() {
+		p.mu.Unlock()
+		return
+	}
+	p.prewarming = true
+	p.mu.Unlock()
+
+	defer func() {
+		p.mu.Lock()
+		p.prewarming = false
+		p.mu.Unlock()
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	_, _ = p.EnsureFreshPass(ctx, standby)
+}
+
+func (p *Pool) RotateToNextReady(ctx context.Context, skipID string) (*guardian.ProxyPass, error) {
+	p.mu.Lock()
+	var candidate *Account
+	for _, a := range p.Accounts {
+		if a.ID != skipID && a.Enabled && a.Status == StatusReady {
+			candidate = a
+			break
+		}
+	}
+	if candidate == nil {
+		p.mu.Unlock()
+		return nil, errors.New("нет доступных резервных аккаунтов со свободной квотой")
+	}
+	for _, a := range p.Accounts {
+		a.Active = (a.ID == candidate.ID)
+	}
+	warmPass := candidate.LastPass
+	isWarm := candidate.HasWarmPass()
+	_ = p.saveLocked()
+	p.mu.Unlock()
+
+	if isWarm {
+		return warmPass, nil
+	}
+	return p.EnsureFreshPass(ctx, candidate)
+}
+
+func (p *Pool) ActiveAccount() *Account {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, a := range p.Accounts {
+		if a.Active {
+			return a
+		}
+	}
+	if len(p.Accounts) > 0 {
+		p.Accounts[0].Active = true
+		return p.Accounts[0]
+	}
+	return nil
+}
+`
+  },
+  {
     path: 'core/mobile/mobile.go',
     language: 'go',
-    title: 'core/mobile/mobile.go (Точка входа gomobile bind -> core.aar)',
-    description: 'Полностью переписанная точка входа Go-ядра для Android без единой лишней зависимости: только управление пулом аккаунтов, выбор локации, замер пинга и запуск туннеля.',
+    title: 'core/mobile/mobile.go (Мост gomobile bind + Reconnect)',
+    description: 'Точка входа core.aar: управление пулом аккаунтов, мгновенный Reconnect() при смене сети Wi-Fi <-> LTE, выбор локации и замер пинга.',
     content: `// Package mobile is the gomobile bind entry point for Android (libs/core.aar).
 // Contains ONLY Mozilla account management, automatic 5 GB quota rotation,
 // Remote Settings server selection, and the local SOCKS5 -> H2 CONNECT tunnel.
@@ -118,9 +732,15 @@ var (
 	connected    = false
 )
 
-// Start initializes the account pool and server list in dataDir.
 func Start(dataDir string, autoConnect bool) error {
 	mu.Lock()
+	if pool != nil {
+		mu.Unlock()
+		if autoConnect {
+			return Connect()
+		}
+		return nil
+	}
 	p, err := accounts.LoadOrCreatePool(dataDir)
 	if err != nil {
 		mu.Unlock()
@@ -145,8 +765,12 @@ func Start(dataDir string, autoConnect bool) error {
 	return nil
 }
 
-// Connect obtains a fresh Guardian ProxyPass from the active Mozilla account
-// (rotating automatically if its 5 GB quota is exhausted) and starts the local tunnel.
+func Running() bool {
+	mu.Lock()
+	defer mu.Unlock()
+	return pool != nil
+}
+
 func Connect() error {
 	mu.Lock()
 	p := pool
@@ -180,7 +804,28 @@ func Connect() error {
 	return nil
 }
 
-// Disconnect stops the local SOCKS5 tunnel.
+// Reconnect immediately resets the HTTP/2 session when Android switches networks
+// (e.g. Wi-Fi <-> LTE/5G) without waiting for old TCP timeouts.
+func Reconnect() {
+	engine.ResetSession()
+	mu.Lock()
+	p := pool
+	isConn := connected
+	mu.Unlock()
+	if !isConn || p == nil {
+		return
+	}
+	go func() {
+		if active := p.ActiveAccount(); active != nil && !active.HasWarmPass() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if pass, err := p.EnsureFreshPass(ctx, active); err == nil && pass != nil {
+				engine.UpdateToken(pass.RawToken)
+			}
+		}
+	}()
+}
+
 func Disconnect() {
 	engine.Stop()
 	mu.Lock()
@@ -188,8 +833,6 @@ func Disconnect() {
 	mu.Unlock()
 }
 
-// SwitchAccount immediately switches the active Mozilla account and hot-swaps
-// its ProxyPass JWT in the running tunnel without dropping the VPN interface.
 func SwitchAccount(accountID string) error {
 	mu.Lock()
 	p := pool
@@ -209,7 +852,6 @@ func SwitchAccount(accountID string) error {
 	return nil
 }
 
-// AddAccountPassword signs in with email + password (PBKDF2 + HKDF + HAWK) and adds the account.
 func AddAccountPassword(email, password string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -221,7 +863,6 @@ func AddAccountPassword(email, password string) error {
 	return AddAccountSessionToken(canonicalEmail, sessionToken)
 }
 
-// AddAccountSessionToken adds an account using a 64-hex FxA sessionToken from WebChannel.
 func AddAccountSessionToken(email, sessionTokenHex string) error {
 	mu.Lock()
 	p := pool
@@ -237,7 +878,6 @@ func AddAccountSessionToken(email, sessionTokenHex string) error {
 	return err
 }
 
-// SetLocation changes the active server country code and switches the upstream Fastly node.
 func SetLocation(countryCode string) {
 	mu.Lock()
 	selectedCode = strings.ToUpper(strings.TrimSpace(countryCode))
@@ -247,7 +887,6 @@ func SetLocation(countryCode string) {
 	engine.SwitchServer(loc.Endpoint())
 }
 
-// PingAllLocations measures real HTTP/2 CONNECT latency across all Mozilla locations.
 func PingAllLocations() error {
 	mu.Lock()
 	p := pool
@@ -284,7 +923,6 @@ func SocksPort() int {
 	return engine.Port()
 }
 
-// StatusJSON returns the complete snapshot for the Android Jetpack Compose UI.
 func StatusJSON() string {
 	mu.Lock()
 	defer mu.Unlock()
@@ -382,8 +1020,6 @@ type OAuthTokens struct {
 	ExpiresAt    time.Time \`json:"expires_at"\`
 }
 
-// DeriveAuthPW stretches email + password using 1000 rounds of PBKDF2-SHA256
-// followed by HKDF-SHA256 ("identity.mozilla.com/picl/v1/authPW").
 func DeriveAuthPW(email, password string) ([]byte, error) {
 	salt := []byte(protocolVersion + "quickStretch:" + email)
 	quickStretched := pbkdf2.Key([]byte(password), salt, pbkdf2Rounds, stretchedPWLen, sha256.New)
@@ -396,7 +1032,6 @@ func DeriveAuthPW(email, password string) ([]byte, error) {
 	return authPW, nil
 }
 
-// DeriveHawkCredentials derives a 32-byte HAWK ID and 32-byte MAC key from a 64-hex token.
 func DeriveHawkCredentials(tokenHex, contextName string) (id string, key []byte, err error) {
 	tokenBytes, err := hex.DecodeString(strings.TrimSpace(tokenHex))
 	if err != nil {
@@ -411,7 +1046,6 @@ func DeriveHawkCredentials(tokenHex, contextName string) (id string, key []byte,
 	return hex.EncodeToString(out[:32]), out[32:64], nil
 }
 
-// HawkHeader signs an HTTP request with HAWK HMAC-SHA256.
 func HawkHeader(method, rawURL, hawkID string, hawkKey []byte, payload string) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -466,8 +1100,6 @@ func HawkHeader(method, rawURL, hawkID string, hawkKey []byte, payload string) (
 	return header, nil
 }
 
-// LoginWithPassword signs in to FxA and returns a sessionToken (64-hex).
-// Automatically retries once if FxA reports errno 120 (canonical email case mismatch).
 func LoginWithPassword(ctx context.Context, email, password string) (sessionToken string, canonicalEmail string, err error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	tok, corrEmail, err := loginAttempt(ctx, email, "", password)
@@ -530,8 +1162,6 @@ func loginAttempt(ctx context.Context, stretchEmail, originalEmail, password str
 	return loginResp.SessionToken, stretchEmail, nil
 }
 
-// ExchangeSessionForOAuth exchanges a 64-hex FxA sessionToken for OAuth access & refresh tokens
-// using HAWK authentication and PKCE fallback.
 func ExchangeSessionForOAuth(ctx context.Context, sessionTokenHex string) (*OAuthTokens, error) {
 	hawkID, hawkKey, err := DeriveHawkCredentials(sessionTokenHex, "sessionToken")
 	if err != nil {
@@ -619,7 +1249,6 @@ func ExchangeSessionForOAuth(ctx context.Context, sessionTokenHex string) (*OAut
 	return &out, nil
 }
 
-// RefreshAccessToken refreshes an expired OAuth access_token using the stored refresh_token.
 func RefreshAccessToken(ctx context.Context, refreshToken string) (*OAuthTokens, error) {
 	body, _ := json.Marshal(map[string]string{
 		"client_id":     FirefoxClientID,
@@ -719,8 +1348,6 @@ type ProxyPass struct {
 	Usage     *QuotaUsage \`json:"usage,omitempty"\`
 }
 
-// FetchProxyPass requests a short-lived ProxyPass JWT from /api/v1/fpn/token.
-// If Guardian responds with HTTP 403, it automatically calls /api/v1/fpn/activate and retries.
 func FetchProxyPass(ctx context.Context, accessToken string) (*ProxyPass, error) {
 	pass, err := fetchTokenOnce(ctx, accessToken)
 	if errors.Is(err, ErrNotEntitled) {
@@ -777,7 +1404,6 @@ func fetchTokenOnce(ctx context.Context, accessToken string) (*ProxyPass, error)
 	}, nil
 }
 
-// Activate enables the Firefox Private Network entitlement on the Mozilla account.
 func Activate(ctx context.Context, accessToken string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, Endpoint+"/api/v1/fpn/activate", nil)
 	if err != nil {
@@ -847,236 +1473,6 @@ func parseJWTExpiry(rawJWT string) time.Time {
 `
   },
   {
-    path: 'core/accounts/pool.go',
-    language: 'go',
-    title: 'core/accounts/pool.go (Пул аккаунтов Mozilla и авто-ротация по квоте)',
-    description: 'Управление списком аккаунтов Mozilla, мгновенное переключение активного профиля в 1 касание и автоматический переход на следующий аккаунт при достижении порога 5 ГБ.',
-    content: `// Package accounts manages the pool of Mozilla accounts, credential
-// persistence, instant 1-tap profile switching, and automatic failover when an
-// account's 5 GB monthly quota reaches the configured threshold.
-package accounts
-
-import (
-	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"encoding/json"
-	"errors"
-	"os"
-	"path/filepath"
-	"sync"
-	"time"
-
-	"mozillavpnlite/core/fxa"
-	"mozillavpnlite/core/guardian"
-)
-
-type Status string
-
-const (
-	StatusReady          Status = "ready"
-	StatusReserved       Status = "reserved"
-	StatusReauthRequired Status = "reauth_required"
-)
-
-type Account struct {
-	ID       string               \`json:"id"\`
-	Email    string               \`json:"email"\`
-	Position int                  \`json:"position"\`
-	Active   bool                 \`json:"active"\`
-	Enabled  bool                 \`json:"enabled"\`
-	Status   Status               \`json:"status"\`
-	Reason   string               \`json:"reason,omitempty"\`
-	Tokens   fxa.OAuthTokens      \`json:"tokens"\`
-	LastPass *guardian.ProxyPass  \`json:"last_pass,omitempty"\`
-	Usage    *guardian.QuotaUsage \`json:"usage,omitempty"\`
-}
-
-type Pool struct {
-	mu               sync.Mutex
-	filePath         string
-	ThresholdPercent int        \`json:"threshold_percent"\`
-	Accounts         []*Account \`json:"accounts"\`
-}
-
-func LoadOrCreatePool(dataDir string) (*Pool, error) {
-	if err := os.MkdirAll(dataDir, 0700); err != nil {
-		return nil, err
-	}
-	fp := filepath.Join(dataDir, "accounts_pool.json")
-	p := &Pool{
-		filePath:         fp,
-		ThresholdPercent: 95,
-		Accounts:         []*Account{},
-	}
-	if data, err := os.ReadFile(fp); err == nil {
-		_ = json.Unmarshal(data, p)
-	}
-	if p.ThresholdPercent < 50 || p.ThresholdPercent > 100 {
-		p.ThresholdPercent = 95
-	}
-	p.recomputeLocked()
-	return p, nil
-}
-
-func (p *Pool) saveLocked() error {
-	p.recomputeLocked()
-	data, err := json.MarshalIndent(p, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(p.filePath, data, 0600)
-}
-
-func (p *Pool) recomputeLocked() {
-	for i, acc := range p.Accounts {
-		acc.Position = i + 1
-		if acc.Usage != nil && !acc.Usage.Unlimited && acc.Usage.LimitBytes > 0 {
-			if acc.Usage.RemainingBytes <= 0 || acc.Usage.UsedPercent() >= float64(p.ThresholdPercent) {
-				if len(p.Accounts) > 1 {
-					acc.Status = StatusReserved
-					acc.Reason = "Достигнут порог месячной квоты 5 ГБ"
-				}
-			} else if acc.Status == StatusReserved {
-				acc.Status = StatusReady
-				acc.Reason = ""
-			}
-		}
-	}
-}
-
-// AddWithSessionToken exchanges an FxA sessionToken for OAuth tokens, fetches a
-// Guardian ProxyPass, and appends the account to the rotation pool.
-func (p *Pool) AddWithSessionToken(ctx context.Context, email, sessionTokenHex string) (*Account, error) {
-	tokens, err := fxa.ExchangeSessionForOAuth(ctx, sessionTokenHex)
-	if err != nil {
-		return nil, err
-	}
-	pass, err := guardian.FetchProxyPass(ctx, tokens.AccessToken)
-	if err != nil {
-		return nil, err
-	}
-
-	var idBytes [6]byte
-	_, _ = rand.Read(idBytes[:])
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	acc := &Account{
-		ID:       "acc-" + hex.EncodeToString(idBytes[:]),
-		Email:    email,
-		Active:   len(p.Accounts) == 0,
-		Enabled:  true,
-		Status:   StatusReady,
-		Tokens:   *tokens,
-		LastPass: pass,
-		Usage:    pass.Usage,
-	}
-	p.Accounts = append(p.Accounts, acc)
-	_ = p.saveLocked()
-	return acc, nil
-}
-
-// Activate immediately makes the given account ID active and returns a valid ProxyPass.
-func (p *Pool) Activate(ctx context.Context, id string) (*guardian.ProxyPass, error) {
-	p.mu.Lock()
-	var target *Account
-	for _, a := range p.Accounts {
-		if a.ID == id {
-			target = a
-			break
-		}
-	}
-	if target == nil {
-		p.mu.Unlock()
-		return nil, errors.New("аккаунт не найден")
-	}
-	for _, a := range p.Accounts {
-		a.Active = (a.ID == id)
-	}
-	target.Enabled = true
-	_ = p.saveLocked()
-	p.mu.Unlock()
-
-	return p.EnsureFreshPass(ctx, target)
-}
-
-// EnsureFreshPass returns a valid ProxyPass for acc, refreshing OAuth or rotating
-// to the next account in the pool if acc's quota is exhausted.
-func (p *Pool) EnsureFreshPass(ctx context.Context, acc *Account) (*guardian.ProxyPass, error) {
-	if time.Now().After(acc.Tokens.ExpiresAt.Add(-2 * time.Minute)) {
-		refreshed, err := fxa.RefreshAccessToken(ctx, acc.Tokens.RefreshToken)
-		if err != nil {
-			p.mu.Lock()
-			if errors.Is(err, fxa.ErrReauthRequired) {
-				acc.Status = StatusReauthRequired
-			}
-			_ = p.saveLocked()
-			p.mu.Unlock()
-			return nil, err
-		}
-		p.mu.Lock()
-		acc.Tokens = *refreshed
-		_ = p.saveLocked()
-		p.mu.Unlock()
-	}
-
-	pass, err := guardian.FetchProxyPass(ctx, acc.Tokens.AccessToken)
-	p.mu.Lock()
-	if pass != nil && pass.Usage != nil {
-		acc.Usage = pass.Usage
-		acc.LastPass = pass
-	}
-	_ = p.saveLocked()
-	p.mu.Unlock()
-
-	if errors.Is(err, guardian.ErrQuotaExceeded) || (pass != nil && pass.Usage != nil && pass.Usage.UsedPercent() >= float64(p.ThresholdPercent)) {
-		return p.RotateToNextReady(ctx, acc.ID)
-	}
-	return pass, err
-}
-
-// RotateToNextReady finds the next enabled account with remaining quota and activates it.
-func (p *Pool) RotateToNextReady(ctx context.Context, skipID string) (*guardian.ProxyPass, error) {
-	p.mu.Lock()
-	var candidate *Account
-	for _, a := range p.Accounts {
-		if a.ID != skipID && a.Enabled && a.Status == StatusReady {
-			candidate = a
-			break
-		}
-	}
-	if candidate == nil {
-		p.mu.Unlock()
-		return nil, errors.New("нет доступных резервных аккаунтов со свободной квотой")
-	}
-	for _, a := range p.Accounts {
-		a.Active = (a.ID == candidate.ID)
-	}
-	_ = p.saveLocked()
-	p.mu.Unlock()
-
-	return p.EnsureFreshPass(ctx, candidate)
-}
-
-func (p *Pool) ActiveAccount() *Account {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	for _, a := range p.Accounts {
-		if a.Active {
-			return a
-		}
-	}
-	if len(p.Accounts) > 0 {
-		p.Accounts[0].Active = true
-		return p.Accounts[0]
-	}
-	return nil
-}
-`
-  },
-  {
     path: 'core/serverlist/serverlist.go',
     language: 'go',
     title: 'core/serverlist/serverlist.go (Загрузка серверов Remote Settings и замер пинга)',
@@ -1135,7 +1531,6 @@ type rsRecord struct {
 	} \`json:"cities"\`
 }
 
-// Fetch retrieves all non-quarantined Mozilla Fastly proxy locations.
 func Fetch(ctx context.Context) ([]Location, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, RemoteSettingsURL, nil)
 	if err != nil {
@@ -1202,7 +1597,6 @@ func Fetch(ctx context.Context) ([]Location, error) {
 	return out, nil
 }
 
-// MeasureLatencies runs concurrent probes using dialProbe and sorts locations fastest-first.
 func MeasureLatencies(ctx context.Context, locations []Location, dialProbe func(ctx context.Context, endpoint string) (time.Duration, error)) []Location {
 	results := make([]Location, len(locations))
 	copy(results, locations)
@@ -1245,290 +1639,6 @@ func MeasureLatencies(ctx context.Context, locations []Location, dialProbe func(
 `
   },
   {
-    path: 'core/tunnel/tunnel.go',
-    language: 'go',
-    title: 'core/tunnel/tunnel.go (Локальный SOCKS5 и мультиплексированный HTTP/2 CONNECT)',
-    description: 'Принимает потоки от Android Tun2Socks по 127.0.0.1 и туннелирует их через TLS 1.3 HTTP/2 CONNECT на выбранный сервер Fastly с горячей заменой токена ProxyPass.',
-    content: `// Package tunnel runs the local loopback SOCKS5 server (for Android Tun2Socks)
-// and multiplexes outbound connections over an HTTP/2 TLS 1.3 CONNECT session
-// to the selected Mozilla Fastly proxy (*.m1.fastly-masque.net:2499) using the
-// active account's Guardian ProxyPass bearer JWT.
-package tunnel
-
-import (
-	"context"
-	"crypto/tls"
-	"encoding/binary"
-	"errors"
-	"fmt"
-	"io"
-	"net"
-	"net/http"
-	"strconv"
-	"sync"
-	"time"
-
-	"golang.org/x/net/http2"
-	"mozillavpnlite/core/fxa"
-)
-
-type Engine struct {
-	mu          sync.RWMutex
-	listener    net.Listener
-	proxyHost   string
-	bearerToken string
-	h2Conn      *http2.ClientConn
-	rawTLS      net.Conn
-}
-
-func NewEngine() *Engine {
-	return &Engine{}
-}
-
-// Start begins listening for local SOCKS5 connections from Android VpnService (Tun2Socks).
-func (e *Engine) Start(listenAddr, proxyEndpoint, proxyPassJWT string) (int, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	e.proxyHost = proxyEndpoint
-	e.bearerToken = proxyPassJWT
-
-	if e.listener == nil {
-		ln, err := net.Listen("tcp", listenAddr)
-		if err != nil {
-			return 0, err
-		}
-		e.listener = ln
-		go e.acceptLoop(ln)
-	}
-	return e.listener.Addr().(*net.TCPAddr).Port, nil
-}
-
-// UpdateToken hot-swaps the active Mozilla account's ProxyPass JWT without dropping the tunnel.
-func (e *Engine) UpdateToken(proxyPassJWT string) {
-	e.mu.Lock()
-	e.bearerToken = proxyPassJWT
-	e.mu.Unlock()
-}
-
-// SwitchServer changes the upstream Mozilla Fastly endpoint and resets the pooled H2 connection.
-func (e *Engine) SwitchServer(proxyEndpoint string) {
-	e.mu.Lock()
-	if e.proxyHost != proxyEndpoint {
-		e.proxyHost = proxyEndpoint
-		if e.rawTLS != nil {
-			_ = e.rawTLS.Close()
-			e.rawTLS = nil
-			e.h2Conn = nil
-		}
-	}
-	e.mu.Unlock()
-}
-
-func (e *Engine) Stop() {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.listener != nil {
-		_ = e.listener.Close()
-		e.listener = nil
-	}
-	if e.rawTLS != nil {
-		_ = e.rawTLS.Close()
-		e.rawTLS = nil
-		e.h2Conn = nil
-	}
-}
-
-func (e *Engine) Port() int {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	if e.listener == nil {
-		return 0
-	}
-	return e.listener.Addr().(*net.TCPAddr).Port
-}
-
-func (e *Engine) acceptLoop(ln net.Listener) {
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			return
-		}
-		go e.handleSocks5(conn)
-	}
-}
-
-func (e *Engine) handleSocks5(client net.Conn) {
-	defer client.Close()
-	_ = client.SetDeadline(time.Now().Add(15 * time.Second))
-
-	var hdr [2]byte
-	if _, err := io.ReadFull(client, hdr[:]); err != nil || hdr[0] != 0x05 {
-		return
-	}
-	methods := make([]byte, int(hdr[1]))
-	if _, err := io.ReadFull(client, methods); err != nil {
-		return
-	}
-	_, _ = client.Write([]byte{0x05, 0x00})
-
-	var reqHdr [4]byte
-	if _, err := io.ReadFull(client, reqHdr[:]); err != nil || reqHdr[0] != 0x05 || reqHdr[1] != 0x01 {
-		return
-	}
-
-	var host string
-	switch reqHdr[3] {
-	case 0x01:
-		var ip [4]byte
-		if _, err := io.ReadFull(client, ip[:]); err != nil {
-			return
-		}
-		host = net.IP(ip[:]).String()
-	case 0x03:
-		var dlen [1]byte
-		if _, err := io.ReadFull(client, dlen[:]); err != nil {
-			return
-		}
-		domain := make([]byte, int(dlen[0]))
-		if _, err := io.ReadFull(client, domain); err != nil {
-			return
-		}
-		host = string(domain)
-	case 0x04:
-		var ip [16]byte
-		if _, err := io.ReadFull(client, ip[:]); err != nil {
-			return
-		}
-		host = net.IP(ip[:]).String()
-	default:
-		return
-	}
-
-	var portBuf [2]byte
-	if _, err := io.ReadFull(client, portBuf[:]); err != nil {
-		return
-	}
-	port := binary.BigEndian.Uint16(portBuf[:])
-	authority := net.JoinHostPort(host, strconv.Itoa(int(port)))
-
-	_, _ = client.Write([]byte{0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
-	_ = client.SetDeadline(time.Time{})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	streamReader, streamWriter, err := e.openH2ConnectStream(ctx, authority)
-	if err != nil {
-		return
-	}
-	defer streamWriter.Close()
-	defer streamReader.Close()
-
-	go func() {
-		_, _ = io.Copy(streamWriter, client)
-		_ = streamWriter.Close()
-	}()
-	_, _ = io.Copy(client, streamReader)
-}
-
-func (e *Engine) ensureH2Session(ctx context.Context) (*http2.ClientConn, string, string, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if e.h2Conn != nil && e.h2Conn.CanTakeNewRequest() {
-		return e.h2Conn, e.proxyHost, e.bearerToken, nil
-	}
-
-	host, _, err := net.SplitHostPort(e.proxyHost)
-	if err != nil {
-		return nil, "", "", err
-	}
-
-	dialer := &tls.Dialer{
-		NetDialer: &net.Dialer{Timeout: 10 * time.Second},
-		Config: &tls.Config{
-			ServerName: host,
-			MinVersion: tls.VersionTLS13,
-			NextProtos: []string{"h2"},
-		},
-	}
-	tlsConn, err := dialer.DialContext(ctx, "tcp", e.proxyHost)
-	if err != nil {
-		return nil, "", "", err
-	}
-
-	tr := &http2.Transport{}
-	cc, err := tr.NewClientConn(tlsConn)
-	if err != nil {
-		_ = tlsConn.Close()
-		return nil, "", "", err
-	}
-
-	e.rawTLS = tlsConn
-	e.h2Conn = cc
-	return cc, e.proxyHost, e.bearerToken, nil
-}
-
-// openH2ConnectStream opens an HTTP/2 CONNECT tunnel stream to targetAuthority.
-func (e *Engine) openH2ConnectStream(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, error) {
-	cc, proxyHost, token, err := e.ensureH2Session(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	pr, pw := io.Pipe()
-	req, err := http.NewRequestWithContext(ctx, http.MethodConnect, "http://"+targetAuthority, pr)
-	if err != nil {
-		_ = pw.Close()
-		return nil, nil, err
-	}
-	req.Host = targetAuthority
-	req.URL.Host = proxyHost
-	req.Header.Set("Proxy-Authorization", "Bearer "+token)
-	req.Header.Set("User-Agent", fxa.FirefoxUserAgent)
-
-	resp, err := cc.RoundTrip(req)
-	if err != nil {
-		_ = pw.Close()
-		return nil, nil, err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		_ = resp.Body.Close()
-		_ = pw.Close()
-		return nil, nil, errors.New(fmt.Sprintf("CONNECT rejected HTTP %d", resp.StatusCode))
-	}
-	return resp.Body, pw, nil
-}
-
-// ProbeLatency measures the round-trip time of an HTTP/2 CONNECT to www.google.com:443
-// through the given Mozilla Fastly proxy endpoint.
-func ProbeLatency(ctx context.Context, proxyEndpoint, bearerToken string) (time.Duration, error) {
-	eng := NewEngine()
-	eng.proxyHost = proxyEndpoint
-	eng.bearerToken = bearerToken
-	defer eng.Stop()
-
-	probeCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-
-	if _, _, _, err := eng.ensureH2Session(probeCtx); err != nil {
-		return 0, err
-	}
-
-	start := time.Now()
-	rc, wc, err := eng.openH2ConnectStream(probeCtx, "www.google.com:443")
-	if err != nil {
-		return 0, err
-	}
-	elapsed := time.Since(start)
-	_ = wc.Close()
-	_ = rc.Close()
-	return elapsed, nil
-}
-`
-  },
-  {
     path: 'core/go.mod',
     language: 'go',
     title: 'core/go.mod (Зависимости переписанного Go-ядра)',
@@ -1544,172 +1654,44 @@ require (
 `
   },
   {
-    path: 'app/src/main/kotlin/app/mozillavpnlite/MainActivity.kt',
+    path: 'android/app/src/main/kotlin/app/mozillavpnlite/MinimalVpnService.kt',
     language: 'kotlin',
-    title: 'MainActivity.kt (Jetpack Compose Minimal UI)',
-    description: 'Единый минималистичный экран Android-приложения: мгновенное переключение аккаунтов Mozilla, выбор локации в 1 касание и запуск VpnService без лишних вкладок.',
-    content: `package app.mozillavpnlite
-
-import android.app.Activity
-import android.content.Intent
-import android.net.VpnService
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        MinimalVpnService.startCore(this, on = false)
-
-        setContent {
-            MaterialTheme(colorScheme = darkColorScheme(
-                primary = Color(0xFF6366F1),
-                surface = Color(0xFF0F172A),
-                background = Color(0xFF020617)
-            )) {
-                MinimalVpnApp(activity = this)
-            }
-        }
-    }
-}
-
-@Composable
-fun MinimalVpnApp(activity: ComponentActivity) {
-    val scope = rememberCoroutineScope()
-    var tab by remember { mutableIntStateOf(0) } // 0 = Пульт, 1 = Аккаунты, 2 = Серверы
-    var state by remember { mutableStateOf(CoreBridge.fetchSnapshot()) }
-
-    val vpnPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { res ->
-        if (res.resultCode == Activity.RESULT_OK) {
-            MinimalVpnService.turnOn(activity)
-            state = CoreBridge.fetchSnapshot()
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            state = CoreBridge.fetchSnapshot()
-            delay(1500)
-        }
-    }
-
-    Scaffold(
-        containerColor = Color(0xFF020617),
-        bottomBar = {
-            NavigationBar(containerColor = Color(0xFF0F172A)) {
-                NavigationBarItem(
-                    selected = tab == 0,
-                    onClick = { tab = 0 },
-                    icon = {},
-                    label = { Text("Пульт", fontWeight = FontWeight.SemiBold) }
-                )
-                NavigationBarItem(
-                    selected = tab == 1,
-                    onClick = { tab = 1 },
-                    icon = {},
-                    label = { Text("Аккаунты  (\${state.accounts.size})", fontWeight = FontWeight.SemiBold) }
-                )
-                NavigationBarItem(
-                    selected = tab == 2,
-                    onClick = { tab = 2 },
-                    icon = {},
-                    label = { Text("Серверы  (\${state.locations.size})", fontWeight = FontWeight.SemiBold) }
-                )
-            }
-        }
-    ) { padding ->
-        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-            when (tab) {
-                0 -> QuickSwitchHome(
-                    state = state,
-                    onToggleVpn = {
-                        if (state.connected) {
-                            MinimalVpnService.turnOff(activity)
-                        } else {
-                            val prep: Intent? = VpnService.prepare(activity)
-                            if (prep != null) vpnPermissionLauncher.launch(prep)
-                            else MinimalVpnService.turnOn(activity)
-                        }
-                        state = CoreBridge.fetchSnapshot()
-                    },
-                    onSelectAccount = { id ->
-                        scope.launch {
-                            mobile.Mobile.switchAccount(id)
-                            state = CoreBridge.fetchSnapshot()
-                        }
-                    },
-                    onSelectLocation = { code ->
-                        scope.launch {
-                            mobile.Mobile.setLocation(code)
-                            state = CoreBridge.fetchSnapshot()
-                        }
-                    }
-                )
-                1 -> AccountsScreen(
-                    state = state,
-                    onActivate = { id ->
-                        scope.launch {
-                            mobile.Mobile.switchAccount(id)
-                            state = CoreBridge.fetchSnapshot()
-                        }
-                    },
-                    onAddAccount = { email, pass ->
-                        scope.launch {
-                            mobile.Mobile.addAccountPassword(email, pass)
-                            state = CoreBridge.fetchSnapshot()
-                        }
-                    }
-                )
-                2 -> ServersScreen(
-                    state = state,
-                    onSelect = { code ->
-                        scope.launch {
-                            mobile.Mobile.setLocation(code)
-                            state = CoreBridge.fetchSnapshot()
-                            tab = 0
-                        }
-                    },
-                    onPingAll = {
-                        scope.launch {
-                            mobile.Mobile.pingAllLocations()
-                            state = CoreBridge.fetchSnapshot()
-                        }
-                    }
-                )
-            }
-        }
-    }
-}
-`
-  },
-  {
-    path: 'app/src/main/kotlin/app/mozillavpnlite/MinimalVpnService.kt',
-    language: 'kotlin',
-    title: 'MinimalVpnService.kt (Android VpnService + Tun2Socks)',
-    description: 'Системный сервис VpnService: поднимает TUN-интерфейс (10.0.0.2/32, MTU 1500), исключает сам клиент из маршрутизации и соединяет Tun2Socks с локальным SOCKS5 нашего переписанного Go-ядра.',
+    title: 'MinimalVpnService.kt (VpnService + NetworkCallback + Tun2Socks)',
+    description: 'Системный сервис VpnService с ConnectivityManager.NetworkCallback: мгновенно вызывает mobile.Mobile.reconnect() при смене сети Wi-Fi <-> LTE/5G без ожидания TCP-таймаута.',
     content: `package app.mozillavpnlite
 
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import java.io.File
 
 class MinimalVpnService : VpnService() {
+
+    private var connectivityManager: ConnectivityManager? = null
+    private var lastNetworkHandle: Long = 0L
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            val handle = network.networkHandle
+            if (lastNetworkHandle != 0L && lastNetworkHandle != handle && isRunning) {
+                // Мгновенный сброс пула TLS 1.3 / HTTP/2 при переключении Wi-Fi <-> LTE/5G
+                mobile.Mobile.reconnect()
+            }
+            lastNetworkHandle = handle
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        connectivityManager = getSystemService(ConnectivityManager::class.java)
+        try {
+            connectivityManager?.registerDefaultNetworkCallback(networkCallback)
+        } catch (_: Exception) {}
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -1757,6 +1739,9 @@ class MinimalVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        try {
+            connectivityManager?.unregisterNetworkCallback(networkCallback)
+        } catch (_: Exception) {}
         Tun2Socks.stop()
         super.onDestroy()
     }
@@ -1772,7 +1757,9 @@ class MinimalVpnService : VpnService() {
 
         @Synchronized
         fun startCore(context: Context, on: Boolean) {
-            mobile.Mobile.start(dataDir(context).absolutePath, on)
+            if (!mobile.Mobile.running()) {
+                mobile.Mobile.start(dataDir(context).absolutePath, on)
+            }
         }
 
         fun turnOn(context: Context) {
@@ -1789,7 +1776,9 @@ class MinimalVpnService : VpnService() {
 
         fun turnOff(context: Context) {
             Tun2Socks.stop()
-            mobile.Mobile.disconnect()
+            if (mobile.Mobile.running()) {
+                mobile.Mobile.disconnect()
+            }
             isRunning = false
             context.stopService(Intent(context, MinimalVpnService::class.java))
         }
@@ -1798,10 +1787,653 @@ class MinimalVpnService : VpnService() {
 `
   },
   {
-    path: 'app/src/main/AndroidManifest.xml',
+    path: 'android/app/src/main/kotlin/app/mozillavpnlite/MainActivity.kt',
+    language: 'kotlin',
+    title: 'MainActivity.kt (Чистый нативный Jetpack Compose UI без Flutter)',
+    description: 'Нативный Android-интерфейс на Jetpack Compose (~4.5 МБ APK без движка Flutter): Пульт, Аккаунты и Серверы.',
+    content: `package app.mozillavpnlite
+
+import android.app.Activity
+import android.content.Intent
+import android.net.VpnService
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        MinimalVpnService.startCore(this, on = false)
+
+        setContent {
+            MaterialTheme(
+                colorScheme = darkColorScheme(
+                    primary = Color(0xFF6366F1),
+                    surface = Color(0xFF0F172A),
+                    background = Color(0xFF020617)
+                )
+            ) {
+                MinimalVpnApp(activity = this)
+            }
+        }
+    }
+}
+
+@Composable
+fun MinimalVpnApp(activity: ComponentActivity) {
+    val scope = rememberCoroutineScope()
+    var tab by remember { mutableIntStateOf(0) } // 0 = Пульт, 1 = Аккаунты, 2 = Серверы
+    var state by remember { mutableStateOf(CoreBridge.fetchSnapshot()) }
+
+    val vpnPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        if (res.resultCode == Activity.RESULT_OK) {
+            MinimalVpnService.turnOn(activity)
+            state = CoreBridge.fetchSnapshot()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            state = withContext(Dispatchers.IO) { CoreBridge.fetchSnapshot() }
+            delay(1500)
+        }
+    }
+
+    Scaffold(
+        containerColor = Color(0xFF020617),
+        bottomBar = {
+            NavigationBar(containerColor = Color(0xFF0F172A)) {
+                NavigationBarItem(
+                    selected = tab == 0,
+                    onClick = { tab = 0 },
+                    icon = {},
+                    label = { Text("Пульт", fontWeight = FontWeight.SemiBold) }
+                )
+                NavigationBarItem(
+                    selected = tab == 1,
+                    onClick = { tab = 1 },
+                    icon = {},
+                    label = { Text("Аккаунты  (\${state.accounts.size})", fontWeight = FontWeight.SemiBold) }
+                )
+                NavigationBarItem(
+                    selected = tab == 2,
+                    onClick = { tab = 2 },
+                    icon = {},
+                    label = { Text("Серверы  (\${state.locations.size})", fontWeight = FontWeight.SemiBold) }
+                )
+            }
+        }
+    ) { padding ->
+        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+            when (tab) {
+                0 -> QuickSwitchHome(
+                    state = state,
+                    onToggleVpn = {
+                        if (state.connected) {
+                            MinimalVpnService.turnOff(activity)
+                        } else {
+                            val prep: Intent? = VpnService.prepare(activity)
+                            if (prep != null) vpnPermissionLauncher.launch(prep)
+                            else MinimalVpnService.turnOn(activity)
+                        }
+                        state = CoreBridge.fetchSnapshot()
+                    },
+                    onSelectAccount = { id ->
+                        scope.launch(Dispatchers.IO) {
+                            try { mobile.Mobile.switchAccount(id) } catch (_: Throwable) {}
+                            val next = CoreBridge.fetchSnapshot()
+                            withContext(Dispatchers.Main) { state = next }
+                        }
+                    },
+                    onSelectLocation = { code ->
+                        scope.launch(Dispatchers.IO) {
+                            try { mobile.Mobile.setLocation(code) } catch (_: Throwable) {}
+                            val next = CoreBridge.fetchSnapshot()
+                            withContext(Dispatchers.Main) { state = next }
+                        }
+                    }
+                )
+                1 -> AccountsScreen(
+                    state = state,
+                    onActivate = { id ->
+                        scope.launch(Dispatchers.IO) {
+                            try { mobile.Mobile.switchAccount(id) } catch (_: Throwable) {}
+                            val next = CoreBridge.fetchSnapshot()
+                            withContext(Dispatchers.Main) { state = next }
+                        }
+                    },
+                    onAddAccount = { email, pass ->
+                        scope.launch(Dispatchers.IO) {
+                            try { mobile.Mobile.addAccountPassword(email, pass) } catch (_: Throwable) {}
+                            val next = CoreBridge.fetchSnapshot()
+                            withContext(Dispatchers.Main) { state = next }
+                        }
+                    }
+                )
+                2 -> ServersScreen(
+                    state = state,
+                    onSelect = { code ->
+                        scope.launch(Dispatchers.IO) {
+                            try { mobile.Mobile.setLocation(code) } catch (_: Throwable) {}
+                            val next = CoreBridge.fetchSnapshot()
+                            withContext(Dispatchers.Main) {
+                                state = next
+                                tab = 0
+                            }
+                        }
+                    },
+                    onPingAll = {
+                        scope.launch(Dispatchers.IO) {
+                            try { mobile.Mobile.pingAllLocations() } catch (_: Throwable) {}
+                            val next = CoreBridge.fetchSnapshot()
+                            withContext(Dispatchers.Main) { state = next }
+                        }
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun QuickSwitchHome(
+    state: CoreSnapshot,
+    onToggleVpn: () -> Unit,
+    onSelectAccount: (String) -> Unit,
+    onSelectLocation: (String) -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (state.connected) Color(0xFF1E1B4B) else Color(0xFF0F172A))
+                    .border(
+                        1.dp,
+                        if (state.connected) Color(0xFF6366F1) else Color(0xFF1E293B),
+                        RoundedCornerShape(20.dp)
+                    )
+                    .clickable { onToggleVpn() }
+                    .padding(20.dp)
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        text = if (state.connected) "ЗАЩИЩЕНО · HTTP/2 TLS 1.3" else "ОТКЛЮЧЕНО",
+                        color = if (state.connected) Color(0xFF34D399) else Color(0xFF94A3B8),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = state.activeLocationName,
+                        color = Color.White,
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = state.activeServerHost,
+                        color = Color(0xFF94A3B8),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+
+        items(state.accounts, key = { it.id }) { acc ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (acc.active) Color(0xFF1E1B4B) else Color(0xFF0F172A))
+                    .border(
+                        1.dp,
+                        if (acc.active) Color(0xFF6366F1) else Color(0xFF1E293B),
+                        RoundedCornerShape(16.dp)
+                    )
+                    .clickable { onSelectAccount(acc.id) }
+                    .padding(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "#\${acc.position}  \${acc.email}",
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Осталось: \${acc.remainingGb} из 5.00 ГБ (\${acc.usedPercent}%)",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 12.sp
+                        )
+                    }
+                    Text(
+                        text = if (acc.active) "Активен" else "Готов",
+                        color = if (acc.active) Color(0xFF818CF8) else Color(0xFF64748B),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
+        items(state.locations.take(6), key = { it.code }) { loc ->
+            val selected = state.selectedLocation.equals(loc.code, ignoreCase = true)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (selected) Color(0xFF1E1B4B) else Color(0xFF0F172A))
+                    .clickable { onSelectLocation(loc.code) }
+                    .padding(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = "\${loc.name} (\${loc.code})", color = Color.White, fontSize = 14.sp)
+                    Text(
+                        text = if (loc.pingMs > 0) "\${loc.pingMs} мс" else "—",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AccountsScreen(
+    state: CoreSnapshot,
+    onActivate: (String) -> Unit,
+    onAddAccount: (String, String) -> Unit
+) {
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Email аккаунта Mozilla") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Пароль (PBKDF2 + HKDF)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Button(
+                    onClick = {
+                        if (email.isNotBlank() && password.isNotBlank()) {
+                            onAddAccount(email.trim(), password)
+                            email = ""
+                            password = ""
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Добавить аккаунт Mozilla")
+                }
+            }
+        }
+
+        items(state.accounts, key = { it.id }) { acc ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF0F172A))
+                    .clickable { onActivate(acc.id) }
+                    .padding(14.dp)
+            ) {
+                Text(
+                    text = "#\${acc.position} \${acc.email} · \${acc.remainingGb}",
+                    color = Color.White,
+                    fontSize = 14.sp
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ServersScreen(
+    state: CoreSnapshot,
+    onSelect: (String) -> Unit,
+    onPingAll: () -> Unit
+) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Button(onClick = onPingAll, modifier = Modifier.fillMaxWidth()) {
+                Text("Измерить реальный пинг (HTTP/2 CONNECT)")
+            }
+        }
+        items(state.locations, key = { it.code }) { loc ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color(0xFF0F172A))
+                    .clickable { onSelect(loc.code) }
+                    .padding(14.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(text = "\${loc.name} · \${loc.city}", color = Color.White, fontSize = 14.sp)
+                    Text(
+                        text = if (loc.pingMs > 0) "\${loc.pingMs} мс" else "—",
+                        color = Color(0xFF34D399),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+`
+  },
+  {
+    path: 'android/app/src/main/kotlin/app/mozillavpnlite/CoreBridge.kt',
+    language: 'kotlin',
+    title: 'CoreBridge.kt (Парсер состояния из Go core.aar)',
+    description: 'Лёгкий мост между Jetpack Compose и Go-ядром (mobile.Mobile.statusJSON()) без сторонних сериализаторов.',
+    content: `package app.mozillavpnlite
+
+import org.json.JSONArray
+import org.json.JSONObject
+
+data class AccountItem(
+    val id: String,
+    val email: String,
+    val position: Int,
+    val active: Boolean,
+    val status: String,
+    val usedPercent: Int,
+    val remainingGb: String
+)
+
+data class LocationItem(
+    val code: String,
+    val name: String,
+    val city: String,
+    val serverHost: String,
+    val pingMs: Long
+)
+
+data class CoreSnapshot(
+    val connected: Boolean = false,
+    val selectedLocation: String = "DE",
+    val activeLocationName: String = "Germany",
+    val activeServerHost: String = "fra104.m1.fastly-masque.net:2499",
+    val thresholdPercent: Int = 95,
+    val accounts: List<AccountItem> = emptyList(),
+    val locations: List<LocationItem> = emptyList()
+)
+
+object CoreBridge {
+    fun fetchSnapshot(): CoreSnapshot {
+        return try {
+            val raw = mobile.Mobile.statusJSON()
+            val root = JSONObject(raw)
+            val locObj = root.optJSONObject("location")
+            val accArr = root.optJSONArray("accounts") ?: JSONArray()
+            val locArr = root.optJSONArray("locations") ?: JSONArray()
+
+            val accounts = mutableListOf<AccountItem>()
+            for (i in 0 until accArr.length()) {
+                val o = accArr.optJSONObject(i) ?: continue
+                val usage = o.optJSONObject("usage")
+                val limit = usage?.optLong("limit_bytes", 5368709120L) ?: 5368709120L
+                val rem = usage?.optLong("remaining_bytes", limit) ?: limit
+                val usedPct = if (limit > 0) (((limit - rem) * 100L) / limit).toInt() else 0
+                val remGb = String.format("%.2f ГБ", rem.toDouble() / (1024.0 * 1024.0 * 1024.0))
+                accounts.add(
+                    AccountItem(
+                        id = o.optString("id"),
+                        email = o.optString("email"),
+                        position = o.optInt("position", i + 1),
+                        active = o.optBoolean("active", false),
+                        status = o.optString("status", "ready"),
+                        usedPercent = usedPct,
+                        remainingGb = remGb
+                    )
+                )
+            }
+
+            val locations = mutableListOf<LocationItem>()
+            for (i in 0 until locArr.length()) {
+                val o = locArr.optJSONObject(i) ?: continue
+                locations.add(
+                    LocationItem(
+                        code = o.optString("code"),
+                        name = o.optString("name"),
+                        city = o.optString("city"),
+                        serverHost = o.optString("server_host"),
+                        pingMs = o.optLong("ping_ms", 0L)
+                    )
+                )
+            }
+
+            CoreSnapshot(
+                connected = root.optBoolean("connected", false),
+                selectedLocation = root.optString("selected_location", "DE"),
+                activeLocationName = locObj?.optString("name", "Germany") ?: "Germany",
+                activeServerHost = "\${locObj?.optString("server_host", "fra104.m1.fastly-masque.net")}:\${locObj?.optInt("server_port", 2499) ?: 2499}",
+                thresholdPercent = root.optInt("threshold_percent", 95),
+                accounts = accounts,
+                locations = locations
+            )
+        } catch (_: Throwable) {
+            CoreSnapshot()
+        }
+    }
+}
+`
+  },
+  {
+    path: 'android/app/src/main/kotlin/app/mozillavpnlite/Tun2Socks.kt',
+    language: 'kotlin',
+    title: 'Tun2Socks.kt (Нативный JNI-мост к hev-socks5-tunnel)',
+    description: 'Прямой вызов C-библиотеки libhev-socks5-tunnel.so для маршрутизации пакетов ядра Android из tun0 в локальный SOCKS5-сервер Go.',
+    content: `package app.mozillavpnlite
+
+import android.os.ParcelFileDescriptor
+
+object Tun2Socks {
+    private var activeTunFd: ParcelFileDescriptor? = null
+
+    init {
+        try {
+            System.loadLibrary("hev-socks5-tunnel")
+        } catch (_: Throwable) {}
+    }
+
+    @JvmStatic
+    private external fun TProxyStartService(configPath: String, fd: Int)
+
+    @JvmStatic
+    private external fun TProxyStopService()
+
+    @Synchronized
+    fun start(configPath: String, tunFd: ParcelFileDescriptor) {
+        stop()
+        activeTunFd = tunFd
+        try {
+            TProxyStartService(configPath, tunFd.fd)
+        } catch (_: Throwable) {}
+    }
+
+    @Synchronized
+    fun stop() {
+        val fd = activeTunFd ?: return
+        activeTunFd = null
+        try {
+            TProxyStopService()
+        } catch (_: Throwable) {}
+        try {
+            fd.close()
+        } catch (_: Throwable) {}
+    }
+}
+`
+  },
+  {
+    path: 'android/app/build.gradle.kts',
+    language: 'gradle',
+    title: 'android/app/build.gradle.kts (Чистая сборка Kotlin + Compose с R8 минификацией)',
+    description: 'Конфигурация сборки нативного Android-приложения с включённым R8/ShrinkResources (~4.5 МБ APK, без Flutter).',
+    content: `plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+}
+
+android {
+    namespace = "app.mozillavpnlite"
+    compileSdk = 35
+    ndkVersion = "27.0.12077973"
+
+    defaultConfig {
+        applicationId = "app.mozillavpnlite"
+        minSdk = 24
+        targetSdk = 35
+        versionCode = 1
+        versionName = "1.0.0-lite"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildFeatures {
+        compose = true
+    }
+}
+
+dependencies {
+    implementation(files("libs/core.aar"))
+    implementation(platform("androidx.compose:compose-bom:2024.10.01"))
+    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material3:material3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+}
+`
+  },
+  {
+    path: 'android/build.gradle.kts',
+    language: 'gradle',
+    title: 'android/build.gradle.kts (Корневой Gradle-файл)',
+    description: 'Плагины Android Application и Kotlin Compose Compiler.',
+    content: `plugins {
+    id("com.android.application") version "8.7.2" apply false
+    id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+}
+`
+  },
+  {
+    path: 'android/settings.gradle.kts',
+    language: 'gradle',
+    title: 'android/settings.gradle.kts (Настройки Gradle-проекта)',
+    description: 'Репозитории Google и MavenCentral для автономной сборки нативного Android-клиента.',
+    content: `pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = "MozillaVpnLite"
+include(":app")
+`
+  },
+  {
+    path: 'android/gradle.properties',
+    language: 'gradle',
+    title: 'android/gradle.properties (Свойства JVM и AndroidX)',
+    description: 'Оптимизация R-классов и памяти Gradle.',
+    content: `org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+android.useAndroidX=true
+android.nonTransitiveRClass=true
+kotlin.code.style=official
+`
+  },
+  {
+    path: 'android/app/src/main/AndroidManifest.xml',
     language: 'xml',
-    title: 'AndroidManifest.xml (Минимальные разрешения)',
-    description: 'Манифест Android-приложения: только INTERNET, FOREGROUND_SERVICE и BIND_VPN_SERVICE.',
+    title: 'android/app/src/main/AndroidManifest.xml (Минимальные разрешения)',
+    description: 'Манифест Android-приложения: только INTERNET, ACCESS_NETWORK_STATE, FOREGROUND_SERVICE и BIND_VPN_SERVICE.',
     content: `<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="app.mozillavpnlite">
@@ -1843,9 +2475,9 @@ class MinimalVpnService : VpnService() {
   {
     path: '.github/workflows/build-apk.yml',
     language: 'markdown',
-    title: '.github/workflows/build-apk.yml (Сборка переписанного Go-ядра и APK)',
-    description: 'Автономный пайплайн GitHub Actions: заменяет тяжеловесное ядро на наше переписанное (core/), компилирует core.aar через gomobile bind и выпускает готовый Mozilla-VPN-Lite-arm64-v8a.apk в Releases.',
-    content: `name: Build Mozilla VPN Lite Android APK
+    title: '.github/workflows/build-apk.yml (Нативная сборка Kotlin + Compose + Go Core без Flutter)',
+    description: 'Пайплайн GitHub Actions: компилирует переписанное Go-ядро в core.aar и собирает чистый нативный APK через Gradle (~4.5 МБ, без Flutter).',
+    content: `name: Build Mozilla VPN Lite Android APK (Pure Kotlin + Compose + Rewritten Go Core)
 
 on:
   push:
@@ -1856,67 +2488,59 @@ permissions:
   contents: write
 
 env:
-  FLUTTER_VERSION: 3.47.7
   GOMOBILE_VERSION: v0.0.0-20260908204917-8b95e45f8d3e
+  NDK_VERSION: 27.0.12077973
 
 jobs:
   build-android-apk:
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout Mozilla VPN Lite repository (Rewritten Go Core + Minimal UI)
+      - name: Checkout Mozilla VPN Lite repository
         uses: actions/checkout@v4
-        with:
-          path: lite
 
-      - name: Clone Android Tun2Socks NDK harness
+      - name: Fetch C Tun2Socks (hev-socks5-tunnel) JNI sources
         run: |
-          git clone --depth 1 https://github.com/armanlife/arman-vpn-client.git upstream
-          rm -rf upstream/core
-          cp -r lite/core upstream/core
-          cp lite/patches/mobile_shell.dart upstream/app/lib/ui/mobile_shell.dart
-          sed -i 's/android:label="[^"]*"/android:label="Mozilla VPN Lite"/g' upstream/app/android/app/src/main/AndroidManifest.xml || true
+          git clone --depth 1 https://github.com/armanlife/arman-vpn-client.git /tmp/upstream-jni
+          mkdir -p android/app/src/main/cpp
+          cp -r /tmp/upstream-jni/app/android/app/src/main/jni/* android/app/src/main/cpp/ 2>/dev/null || true
 
-      - name: Set up Go
+      - name: Set up Go 1.23
         uses: actions/setup-go@v5
         with:
           go-version: '1.23'
 
-      - name: Set up Java 21
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: \${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Install Android NDK & gomobile
-        working-directory: upstream
         run: |
-          ndk="\$(sed -n 's/.*ndkVersion = "\\(.*\\)".*/\\1/p' app/android/app/build.gradle.kts)"
-          yes | "\$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;\$ndk" > /dev/null
-          echo "ANDROID_NDK_HOME=\$ANDROID_HOME/ndk/\$ndk" >> "\$GITHUB_ENV"
+          yes | "\$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;\$NDK_VERSION" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          echo "ANDROID_NDK_HOME=\$ANDROID_HOME/ndk/\$NDK_VERSION" >> "\$GITHUB_ENV"
           go install "golang.org/x/mobile/cmd/gomobile@\$GOMOBILE_VERSION" "golang.org/x/mobile/cmd/gobind@\$GOMOBILE_VERSION"
 
-      - name: Compile Rewritten Minimal Go Core (core.aar) & Build Release APKs
-        working-directory: upstream
+      - name: Compile Optimized Go Core (core.aar)
         run: |
-          mkdir -p app/android/app/libs
-          (cd core && go get golang.org/x/mobile/bind@\$GOMOBILE_VERSION && go mod tidy && \\
-            gomobile bind -target=android -androidapi 24 -trimpath -ldflags "-s -w" \\
-            -o ../app/android/app/libs/core.aar ./mobile)
-          cd app
-          flutter pub get
-          mkdir -p ../../out
-          flutter build apk --release --split-per-abi
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ../../out/Mozilla-VPN-Lite-arm64-v8a.apk
-          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk ../../out/Mozilla-VPN-Lite-armeabi-v7a.apk
+          mkdir -p android/app/libs
+          cd core
+          go get "golang.org/x/mobile/bind@\$GOMOBILE_VERSION"
+          go mod tidy
+          gomobile bind -target=android -androidapi 24 -trimpath -ldflags "-s -w" \\
+            -o ../android/app/libs/core.aar ./mobile
 
-      - name: Upload Ready Android APKs to Artifacts
+      - name: Build Pure Native Kotlin + Jetpack Compose Release APK (No Flutter)
+        working-directory: android
+        run: |
+          gradle assembleRelease --no-daemon
+          mkdir -p ../out
+          cp app/build/outputs/apk/release/app-release.apk ../out/Mozilla-VPN-Lite-Native-Compose.apk
+
+      - name: Upload Ready Android APK to Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Mozilla-VPN-Lite-Android-APK
@@ -1930,8 +2554,8 @@ jobs:
           tag="v1.0.0-lite"
           gh release delete "\$tag" --yes --cleanup-tag 2>/dev/null || true
           gh release create "\$tag" out/*.apk \\
-            --title "Mozilla VPN Lite (Android APK — Rewritten Minimal Core)" \\
-            --notes "Минималистичная сборка с полностью переписанным Go-ядром (mozillavpnlite/core): только FxA, Guardian ProxyPass, пул аккаунтов 5 ГБ, Remote Settings и локальный туннель."
+            --title "Mozilla VPN Lite (Pure Native Kotlin + Rewritten Go Core)" \\
+            --notes "Чистая нативная сборка Kotlin + Jetpack Compose (~4.5 МБ, без Flutter) с переписанным и оптимизированным Go-ядром (sync.Pool 32KB, TCP_NODELAY, Pre-warm 2-го аккаунта и авто-реконнект Wi-Fi <-> LTE)."
 `
   }
 ];

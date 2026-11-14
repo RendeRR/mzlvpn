@@ -2,12 +2,36 @@ package app.mozillavpnlite
 
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import java.io.File
 
 class MinimalVpnService : VpnService() {
+
+    private var connectivityManager: ConnectivityManager? = null
+    private var lastNetworkHandle: Long = 0L
+
+    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: Network) {
+            val handle = network.networkHandle
+            if (lastNetworkHandle != 0L && lastNetworkHandle != handle && isRunning) {
+                // Мгновенный сброс пула TLS 1.3 / HTTP/2 при переключении Wi-Fi <-> LTE/5G
+                mobile.Mobile.reconnect()
+            }
+            lastNetworkHandle = handle
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        connectivityManager = getSystemService(ConnectivityManager::class.java)
+        try {
+            connectivityManager?.registerDefaultNetworkCallback(networkCallback)
+        } catch (_: Exception) {}
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -29,8 +53,9 @@ class MinimalVpnService : VpnService() {
             .addAddress("fd00::2", 128)
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
-            .addDnsServer("10.0.0.1")
+            .addDnsServer("1.1.1.1")
 
+        // Исключаем сам VPN-клиент, чтобы HTTP/2 CONNECT к Fastly шёл напрямую
         try {
             builder.addDisallowedApplication(packageName)
         } catch (_: Exception) {}
@@ -54,6 +79,9 @@ class MinimalVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        try {
+            connectivityManager?.unregisterNetworkCallback(networkCallback)
+        } catch (_: Exception) {}
         Tun2Socks.stop()
         super.onDestroy()
     }
@@ -89,7 +117,7 @@ class MinimalVpnService : VpnService() {
         fun turnOff(context: Context) {
             Tun2Socks.stop()
             if (mobile.Mobile.running()) {
-                mobile.Mobile.setOn(false)
+                mobile.Mobile.disconnect()
             }
             isRunning = false
             context.stopService(Intent(context, MinimalVpnService::class.java))

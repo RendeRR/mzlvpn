@@ -1013,16 +1013,9 @@ async function startServer() {
       };
 
       const fs = await import('fs/promises');
-      const mobileShellPatch = await fs.readFile(path.join(__dirname, 'patches/mobile_shell.dart'), 'utf8');
       const workflowYaml = await fs.readFile(path.join(__dirname, '.github/workflows/build-apk.yml'), 'utf8');
 
-      // 3. Upload patch, Android source files, and GitHub Actions workflow
-      await putRepoFile(
-        'patches/mobile_shell.dart',
-        mobileShellPatch,
-        'Add minimalist 3-tab mobile_shell.dart patch'
-      );
-
+      // 3. Upload rewritten Go core, pure-Kotlin Android project files, and GitHub Actions workflow
       for (const file of ANDROID_PROJECT_FILES) {
         if (file.path !== '.github/workflows/build-apk.yml') {
           await putRepoFile(file.path, file.content, `Update ${file.path}`);
@@ -1032,7 +1025,7 @@ async function startServer() {
       await putRepoFile(
         '.github/workflows/build-apk.yml',
         workflowYaml,
-        'Configure automated Android APK build and Release workflow'
+        'Configure pure-Kotlin + rewritten Go core Android APK build workflow'
       );
 
       // 4. Trigger workflow_dispatch explicitly as well

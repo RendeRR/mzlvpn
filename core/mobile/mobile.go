@@ -29,6 +29,13 @@ var (
 // Start initializes the account pool and server list in dataDir.
 func Start(dataDir string, autoConnect bool) error {
 	mu.Lock()
+	if pool != nil {
+		mu.Unlock()
+		if autoConnect {
+			return Connect()
+		}
+		return nil
+	}
 	p, err := accounts.LoadOrCreatePool(dataDir)
 	if err != nil {
 		mu.Unlock()
@@ -51,6 +58,13 @@ func Start(dataDir string, autoConnect bool) error {
 		return Connect()
 	}
 	return nil
+}
+
+// Running reports whether the core has been initialized.
+func Running() bool {
+	mu.Lock()
+	defer mu.Unlock()
+	return pool != nil
 }
 
 // Connect obtains a fresh Guardian ProxyPass from the active Mozilla account
@@ -88,6 +102,28 @@ func Connect() error {
 	return nil
 }
 
+// Reconnect immediately resets the HTTP/2 session when Android switches networks
+// (e.g. Wi-Fi <-> LTE/5G) without waiting for old TCP timeouts.
+func Reconnect() {
+	engine.ResetSession()
+	mu.Lock()
+	p := pool
+	isConn := connected
+	mu.Unlock()
+	if !isConn || p == nil {
+		return
+	}
+	go func() {
+		if active := p.ActiveAccount(); active != nil && !active.HasWarmPass() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if pass, err := p.EnsureFreshPass(ctx, active); err == nil && pass != nil {
+				engine.UpdateToken(pass.RawToken)
+			}
+		}
+	}()
+}
+
 // Disconnect stops the local SOCKS5 tunnel.
 func Disconnect() {
 	engine.Stop()
@@ -97,7 +133,7 @@ func Disconnect() {
 }
 
 // SwitchAccount immediately switches the active Mozilla account and hot-swaps
-// its ProxyPass JWT in the running tunnel without dropping the VPN interface.
+// its ProxyPass JWT in the running tunnel (0 ms if pre-warmed).
 func SwitchAccount(accountID string) error {
 	mu.Lock()
 	p := pool

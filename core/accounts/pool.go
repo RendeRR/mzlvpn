@@ -1,5 +1,6 @@
-// Package accounts manages the pool of Mozilla accounts, AES-256-GCM credential
-// persistence, instant 1-tap profile switching, and automatic failover when an
+// Package accounts manages the pool of Mozilla accounts, credential
+// persistence, instant 1-tap profile switching, background pre-warming of the
+// standby account at (Threshold - 5%), and 0-ms automatic failover when an
 // account's 5 GB monthly quota reaches the configured threshold.
 package accounts
 
@@ -27,20 +28,26 @@ const (
 )
 
 type Account struct {
-	ID           string               `json:"id"`
-	Email        string               `json:"email"`
-	Position     int                  `json:"position"`
-	Active       bool                 `json:"active"`
-	Enabled      bool                 `json:"enabled"`
-	Status       Status               `json:"status"`
-	Reason       string               `json:"reason,omitempty"`
-	Tokens       fxa.OAuthTokens      `json:"tokens"`
-	LastPass     *guardian.ProxyPass  `json:"last_pass,omitempty"`
-	Usage        *guardian.QuotaUsage `json:"usage,omitempty"`
+	ID       string               `json:"id"`
+	Email    string               `json:"email"`
+	Position int                  `json:"position"`
+	Active   bool                 `json:"active"`
+	Enabled  bool                 `json:"enabled"`
+	Status   Status               `json:"status"`
+	Reason   string               `json:"reason,omitempty"`
+	Tokens   fxa.OAuthTokens      `json:"tokens"`
+	LastPass *guardian.ProxyPass  `json:"last_pass,omitempty"`
+	Usage    *guardian.QuotaUsage `json:"usage,omitempty"`
+}
+
+func (a *Account) HasWarmPass() bool {
+	return a != nil && a.LastPass != nil && a.LastPass.RawToken != "" &&
+		time.Now().Before(a.LastPass.ExpiresAt.Add(-5*time.Minute))
 }
 
 type Pool struct {
 	mu               sync.Mutex
+	prewarming       bool
 	filePath         string
 	ThresholdPercent int        `json:"threshold_percent"`
 	Accounts         []*Account `json:"accounts"`
@@ -125,7 +132,9 @@ func (p *Pool) AddWithSessionToken(ctx context.Context, email, sessionTokenHex s
 	return acc, nil
 }
 
-// Activate immediately makes the given account ID active and returns a valid ProxyPass.
+// Activate immediately makes the given account ID active.
+// If the account already has a warm ProxyPass in memory, it returns in 0 ms and
+// refreshes quota in the background.
 func (p *Pool) Activate(ctx context.Context, id string) (*guardian.ProxyPass, error) {
 	p.mu.Lock()
 	var target *Account
@@ -143,14 +152,26 @@ func (p *Pool) Activate(ctx context.Context, id string) (*guardian.ProxyPass, er
 		a.Active = (a.ID == id)
 	}
 	target.Enabled = true
+	warmPass := target.LastPass
+	isWarm := target.HasWarmPass()
 	_ = p.saveLocked()
 	p.mu.Unlock()
+
+	if isWarm {
+		go func(acc *Account) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_, _ = p.EnsureFreshPass(bgCtx, acc)
+		}(target)
+		return warmPass, nil
+	}
 
 	return p.EnsureFreshPass(ctx, target)
 }
 
 // EnsureFreshPass returns a valid ProxyPass for acc, refreshing OAuth or rotating
 // to the next account in the pool if acc's quota is exhausted.
+// When usage reaches (ThresholdPercent - 5%), it pre-warms the next standby account in the background.
 func (p *Pool) EnsureFreshPass(ctx context.Context, acc *Account) (*guardian.ProxyPass, error) {
 	if time.Now().After(acc.Tokens.ExpiresAt.Add(-2 * time.Minute)) {
 		refreshed, err := fxa.RefreshAccessToken(ctx, acc.Tokens.RefreshToken)
@@ -171,6 +192,7 @@ func (p *Pool) EnsureFreshPass(ctx context.Context, acc *Account) (*guardian.Pro
 
 	pass, err := guardian.FetchProxyPass(ctx, acc.Tokens.AccessToken)
 	p.mu.Lock()
+	threshold := float64(p.ThresholdPercent)
 	if pass != nil && pass.Usage != nil {
 		acc.Usage = pass.Usage
 		acc.LastPass = pass
@@ -178,13 +200,53 @@ func (p *Pool) EnsureFreshPass(ctx context.Context, acc *Account) (*guardian.Pro
 	_ = p.saveLocked()
 	p.mu.Unlock()
 
-	if errors.Is(err, guardian.ErrQuotaExceeded) || (pass != nil && pass.Usage != nil && pass.Usage.UsedPercent() >= float64(p.ThresholdPercent)) {
+	if errors.Is(err, guardian.ErrQuotaExceeded) || (pass != nil && pass.Usage != nil && pass.Usage.UsedPercent() >= threshold) {
 		return p.RotateToNextReady(ctx, acc.ID)
 	}
+
+	// Pre-warm standby account when active account crosses (Threshold - 5%)
+	if pass != nil && pass.Usage != nil && pass.Usage.UsedPercent() >= (threshold-5.0) {
+		go p.PrewarmNextReady(acc.ID)
+	}
+
 	return pass, err
 }
 
+// PrewarmNextReady refreshes OAuth and caches a fresh ProxyPass JWT on the next
+// ready standby account in the background so failover happens in 0 ms.
+func (p *Pool) PrewarmNextReady(activeID string) {
+	p.mu.Lock()
+	if p.prewarming {
+		p.mu.Unlock()
+		return
+	}
+	var standby *Account
+	for _, a := range p.Accounts {
+		if a.ID != activeID && a.Enabled && a.Status == StatusReady {
+			standby = a
+			break
+		}
+	}
+	if standby == nil || standby.HasWarmPass() {
+		p.mu.Unlock()
+		return
+	}
+	p.prewarming = true
+	p.mu.Unlock()
+
+	defer func() {
+		p.mu.Lock()
+		p.prewarming = false
+		p.mu.Unlock()
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	_, _ = p.EnsureFreshPass(ctx, standby)
+}
+
 // RotateToNextReady finds the next enabled account with remaining quota and activates it.
+// If the standby account was already pre-warmed, returns its cached ProxyPass in 0 ms.
 func (p *Pool) RotateToNextReady(ctx context.Context, skipID string) (*guardian.ProxyPass, error) {
 	p.mu.Lock()
 	var candidate *Account
@@ -201,9 +263,14 @@ func (p *Pool) RotateToNextReady(ctx context.Context, skipID string) (*guardian.
 	for _, a := range p.Accounts {
 		a.Active = (a.ID == candidate.ID)
 	}
+	warmPass := candidate.LastPass
+	isWarm := candidate.HasWarmPass()
 	_ = p.saveLocked()
 	p.mu.Unlock()
 
+	if isWarm {
+		return warmPass, nil
+	}
 	return p.EnsureFreshPass(ctx, candidate)
 }
 

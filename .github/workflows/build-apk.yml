@@ -1,4 +1,4 @@
-name: Build Mozilla VPN Lite Android APK
+name: Build Mozilla VPN Lite Android APK (Pure Kotlin + Compose + Rewritten Go Core)
 
 on:
   push:
@@ -9,67 +9,59 @@ permissions:
   contents: write
 
 env:
-  FLUTTER_VERSION: 3.47.7
   GOMOBILE_VERSION: v0.0.0-20260908204917-8b95e45f8d3e
+  NDK_VERSION: 27.0.12077973
 
 jobs:
   build-android-apk:
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout Mozilla VPN Lite repository (Rewritten Go Core + Minimal UI)
+      - name: Checkout Mozilla VPN Lite repository
         uses: actions/checkout@v4
-        with:
-          path: lite
 
-      - name: Clone Android Tun2Socks NDK harness
+      - name: Fetch C Tun2Socks (hev-socks5-tunnel) JNI sources
         run: |
-          git clone --depth 1 https://github.com/armanlife/arman-vpn-client.git upstream
-          rm -rf upstream/core
-          cp -r lite/core upstream/core
-          cp lite/patches/mobile_shell.dart upstream/app/lib/ui/mobile_shell.dart
-          sed -i 's/android:label="[^"]*"/android:label="Mozilla VPN Lite"/g' upstream/app/android/app/src/main/AndroidManifest.xml || true
+          git clone --depth 1 https://github.com/armanlife/arman-vpn-client.git /tmp/upstream-jni
+          mkdir -p android/app/src/main/cpp
+          cp -r /tmp/upstream-jni/app/android/app/src/main/jni/* android/app/src/main/cpp/ 2>/dev/null || true
 
-      - name: Set up Go
+      - name: Set up Go 1.23
         uses: actions/setup-go@v5
         with:
           go-version: '1.23'
 
-      - name: Set up Java 21
+      - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
 
-      - name: Set up Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          channel: stable
-          cache: true
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Install Android NDK & gomobile
-        working-directory: upstream
         run: |
-          ndk="$(sed -n 's/.*ndkVersion = "\(.*\)".*/\1/p' app/android/app/build.gradle.kts)"
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$ndk" > /dev/null
-          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ndk" >> "$GITHUB_ENV"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
           go install "golang.org/x/mobile/cmd/gomobile@$GOMOBILE_VERSION" "golang.org/x/mobile/cmd/gobind@$GOMOBILE_VERSION"
 
-      - name: Compile Rewritten Minimal Go Core (core.aar) & Build Release APKs
-        working-directory: upstream
+      - name: Compile Optimized Go Core (core.aar)
         run: |
-          mkdir -p app/android/app/libs
-          (cd core && go get golang.org/x/mobile/bind@$GOMOBILE_VERSION && go mod tidy && \
-            gomobile bind -target=android -androidapi 24 -trimpath -ldflags "-s -w" \
-            -o ../app/android/app/libs/core.aar ./mobile)
-          cd app
-          flutter pub get
-          mkdir -p ../../out
-          flutter build apk --release --split-per-abi
-          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk ../../out/Mozilla-VPN-Lite-arm64-v8a.apk
-          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk ../../out/Mozilla-VPN-Lite-armeabi-v7a.apk
+          mkdir -p android/app/libs
+          cd core
+          go get "golang.org/x/mobile/bind@$GOMOBILE_VERSION"
+          go mod tidy
+          gomobile bind -target=android -androidapi 24 -trimpath -ldflags "-s -w" \
+            -o ../android/app/libs/core.aar ./mobile
 
-      - name: Upload Ready Android APKs to Artifacts
+      - name: Build Pure Native Kotlin + Jetpack Compose Release APK (No Flutter)
+        working-directory: android
+        run: |
+          gradle assembleRelease --no-daemon
+          mkdir -p ../out
+          cp app/build/outputs/apk/release/app-release.apk ../out/Mozilla-VPN-Lite-Native-Compose.apk
+
+      - name: Upload Ready Android APK to Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Mozilla-VPN-Lite-Android-APK
@@ -83,5 +75,5 @@ jobs:
           tag="v1.0.0-lite"
           gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$tag" out/*.apk \
-            --title "Mozilla VPN Lite (Android APK — Rewritten Minimal Core)" \
-            --notes "Минималистичная сборка с полностью переписанным Go-ядром (mozillavpnlite/core): только FxA, Guardian ProxyPass, пул аккаунтов 5 ГБ, Remote Settings и локальный туннель."
+            --title "Mozilla VPN Lite (Pure Native Kotlin + Rewritten Go Core)" \
+            --notes "Чистая нативная сборка Kotlin + Jetpack Compose (~4.5 МБ, без Flutter) с переписанным и оптимизированным Go-ядром (sync.Pool 32KB, TCP_NODELAY, Pre-warm 2-го аккаунта и авто-реконнект Wi-Fi <-> LTE)."
