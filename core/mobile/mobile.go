@@ -250,24 +250,34 @@ func VerifySignInCode(code string) string {
 		return jsonResult("error", "Нет активной сессии для подтверждения. Повторите вход.", email)
 	}
 	cleanCode := strings.TrimSpace(code)
-	if len(cleanCode) < 6 {
-		return jsonResult("error", "Введите 6-значный код подтверждения", email)
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 22*time.Second)
 	defer cancel()
 
-	var err error
-	if mode == "totp-2fa" {
-		err = fxa.VerifySessionTOTP(ctx, sessionHex, cleanCode)
+	if cleanCode != "" {
+		var err error
+		if mode == "totp-2fa" {
+			err = fxa.VerifySessionTOTP(ctx, sessionHex, cleanCode)
+		} else {
+			err = fxa.VerifySessionCode(ctx, sessionHex, cleanCode)
+		}
+		if err != nil {
+			// Check if session was already verified via email link or browser
+			if verified, vErr := fxa.SessionVerified(ctx, sessionHex); vErr != nil || !verified {
+				return jsonResult("error", "Код не принят Mozilla: "+err.Error(), email)
+			}
+		}
 	} else {
-		err = fxa.VerifySessionCode(ctx, sessionHex, cleanCode)
-	}
-	if err != nil {
-		return jsonResult("error", "Код не принят Mozilla: "+err.Error(), email)
+		if verified, vErr := fxa.SessionVerified(ctx, sessionHex); vErr != nil || !verified {
+			return jsonResult("error", "Введите 6-значный код подтверждения из письма Mozilla", email)
+		}
 	}
 
 	if _, err := p.AddWithSessionToken(ctx, email, sessionHex); err != nil {
+		var apiErr *fxa.APIError
+		if errors.As(err, &apiErr) && apiErr.Errno == 138 {
+			return jsonResult("verify_email", "Сессия ещё не подтверждена. Введите 6-значный код из письма Mozilla:", email)
+		}
 		return jsonResult("error", "Ошибка обмена OAuth / Guardian: "+err.Error(), email)
 	}
 
@@ -290,6 +300,7 @@ func AddAccountPassword(email, password string) error {
 }
 
 // AddAccountSessionToken adds an account using a 64-hex FxA sessionToken from WebChannel or manual paste.
+// If the session is unconfirmed (verified=false or errno 138), it stores the pending session and returns state="verify_email".
 func AddAccountSessionToken(email, sessionTokenHex string) string {
 	mu.Lock()
 	p := pool
@@ -302,25 +313,46 @@ func AddAccountSessionToken(email, sessionTokenHex string) string {
 	if len(cleanToken) != 64 {
 		return jsonResult("error", "SessionToken должен состоять из 64 hex-символов", email)
 	}
-	if strings.TrimSpace(email) == "" {
-		email = "firefox.user@mozilla.org"
+	cleanEmail := strings.TrimSpace(email)
+	if cleanEmail == "" {
+		cleanEmail = "firefox.user@mozilla.org"
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	mu.Lock()
+	pendingEmail = cleanEmail
+	pendingSessionHex = cleanToken
+	pendingVerifyMode = "email-2fa"
+	mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	// Wait briefly if the browser session is still awaiting email/2FA confirmation
-	for attempt := 0; attempt < 8; attempt++ {
-		if verified, err := fxa.SessionVerified(ctx, cleanToken); err == nil && verified {
-			break
-		}
-		time.Sleep(1500 * time.Millisecond)
+	verified, err := fxa.SessionVerified(ctx, cleanToken)
+	if err != nil || !verified {
+		return jsonResult(
+			"verify_email",
+			"Mozilla отправила 6-значный код подтверждения входа на "+cleanEmail+". Введите код из письма ниже:",
+			cleanEmail,
+		)
 	}
 
-	if _, err := p.AddWithSessionToken(ctx, strings.TrimSpace(email), cleanToken); err != nil {
-		return jsonResult("error", "Не удалось обменять SessionToken: "+err.Error(), email)
+	if _, err := p.AddWithSessionToken(ctx, cleanEmail, cleanToken); err != nil {
+		var apiErr *fxa.APIError
+		if errors.As(err, &apiErr) && apiErr.Errno == 138 {
+			return jsonResult(
+				"verify_email",
+				"Mozilla отправила 6-значный код подтверждения входа на "+cleanEmail+". Введите код из письма ниже:",
+				cleanEmail,
+			)
+		}
+		return jsonResult("error", "Не удалось обменять SessionToken: "+err.Error(), cleanEmail)
 	}
-	return jsonResult("ok", "Аккаунт "+email+" добавлен через SessionToken", email)
+
+	mu.Lock()
+	pendingSessionHex = ""
+	mu.Unlock()
+
+	return jsonResult("ok", "Аккаунт "+cleanEmail+" успешно добавлен", cleanEmail)
 }
 
 func MoveAccount(accountID string, delta int) {

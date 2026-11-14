@@ -382,10 +382,15 @@ func SessionVerified(ctx context.Context, sessionTokenHex string) (bool, error) 
 		return false, fmt.Errorf("recovery_email/status HTTP %d", resp.StatusCode)
 	}
 	var st struct {
-		Verified bool `json:"verified"`
+		Email           string `json:"email"`
+		Verified        bool   `json:"verified"`
+		SessionVerified *bool  `json:"sessionVerified"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
 		return false, err
+	}
+	if st.SessionVerified != nil {
+		return st.Verified && *st.SessionVerified, nil
 	}
 	return st.Verified, nil
 }
