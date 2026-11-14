@@ -18,7 +18,10 @@ import (
 	"mozillavpnlite/core/fxa"
 )
 
-const Endpoint = "https://vpn.mozilla.org"
+const (
+	Endpoint                 = "https://vpn.mozilla.org"
+	DefaultMonthlyQuotaBytes = int64(5) * 1024 * 1024 * 1024 // 5 GB (5,368,709,120 bytes)
+)
 
 var (
 	ErrTokenInvalid  = errors.New("OAuth токен отклонён Guardian (HTTP 401)")
@@ -33,15 +36,26 @@ type QuotaUsage struct {
 	ResetAt        time.Time `json:"reset_at"`
 }
 
+func DefaultQuotaUsage() *QuotaUsage {
+	now := time.Now().UTC()
+	nextMonth := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC)
+	return &QuotaUsage{
+		Unlimited:      false,
+		LimitBytes:     DefaultMonthlyQuotaBytes,
+		RemainingBytes: DefaultMonthlyQuotaBytes,
+		ResetAt:        nextMonth,
+	}
+}
+
 func (u *QuotaUsage) UsedBytes() int64 {
-	if u == nil || u.Unlimited || u.LimitBytes <= u.RemainingBytes {
+	if u == nil || u.LimitBytes <= u.RemainingBytes {
 		return 0
 	}
 	return u.LimitBytes - u.RemainingBytes
 }
 
 func (u *QuotaUsage) UsedPercent() float64 {
-	if u == nil || u.Unlimited || u.LimitBytes <= 0 {
+	if u == nil || u.LimitBytes <= 0 {
 		return 0
 	}
 	return float64(u.UsedBytes()) * 100.0 / float64(u.LimitBytes)
@@ -78,7 +92,10 @@ func fetchTokenOnce(ctx context.Context, accessToken string) (*ProxyPass, error)
 	}
 	defer resp.Body.Close()
 
-	usage := parseQuotaHeaders(resp.Header)
+	usage := ParseQuotaHeaders(resp.Header)
+	if usage == nil {
+		usage = DefaultQuotaUsage()
+	}
 
 	switch resp.StatusCode {
 	case http.StatusOK:
@@ -87,6 +104,7 @@ func fetchTokenOnce(ctx context.Context, accessToken string) (*ProxyPass, error)
 	case http.StatusForbidden:
 		return nil, ErrNotEntitled
 	case http.StatusTooManyRequests:
+		usage.RemainingBytes = 0
 		return &ProxyPass{Usage: usage}, ErrQuotaExceeded
 	default:
 		return nil, fmt.Errorf("Guardian HTTP %d", resp.StatusCode)
@@ -138,27 +156,34 @@ func applyHeaders(req *http.Request, accessToken string) {
 	req.Header.Set("User-Agent", fxa.FirefoxUserAgent)
 }
 
-func parseQuotaHeaders(h http.Header) *QuotaUsage {
-	if strings.EqualFold(strings.TrimSpace(h.Get("X-Quota-Unlimited")), "true") {
-		return &QuotaUsage{Unlimited: true}
+// ParseQuotaHeaders extracts X-Quota-Limit, X-Quota-Remaining, and X-Quota-Reset headers.
+func ParseQuotaHeaders(h http.Header) *QuotaUsage {
+	if h == nil {
+		return nil
 	}
 	limit, err1 := strconv.ParseInt(strings.TrimSpace(h.Get("X-Quota-Limit")), 10, 64)
 	rem, err2 := strconv.ParseInt(strings.TrimSpace(h.Get("X-Quota-Remaining")), 10, 64)
-	if err1 != nil || err2 != nil || limit <= 0 {
-		return nil
+	if err1 == nil && err2 == nil && limit > 0 {
+		var resetAt time.Time
+		rawReset := strings.TrimSpace(h.Get("X-Quota-Reset"))
+		if t, err := time.Parse(time.RFC3339Nano, rawReset); err == nil {
+			resetAt = t
+		} else if sec, err := strconv.ParseInt(rawReset, 10, 64); err == nil && sec > 0 {
+			resetAt = time.Unix(sec, 0)
+		}
+		return &QuotaUsage{
+			Unlimited:      false,
+			LimitBytes:     limit,
+			RemainingBytes: rem,
+			ResetAt:        resetAt,
+		}
 	}
-	var resetAt time.Time
-	rawReset := strings.TrimSpace(h.Get("X-Quota-Reset"))
-	if t, err := time.Parse(time.RFC3339Nano, rawReset); err == nil {
-		resetAt = t
-	} else if sec, err := strconv.ParseInt(rawReset, 10, 64); err == nil && sec > 0 {
-		resetAt = time.Unix(sec, 0)
+	if strings.EqualFold(strings.TrimSpace(h.Get("X-Quota-Unlimited")), "true") {
+		q := DefaultQuotaUsage()
+		q.Unlimited = true
+		return q
 	}
-	return &QuotaUsage{
-		LimitBytes:     limit,
-		RemainingBytes: rem,
-		ResetAt:        resetAt,
-	}
+	return nil
 }
 
 func parseJWTExpiry(rawJWT string) time.Time {

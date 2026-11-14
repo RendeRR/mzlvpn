@@ -1,7 +1,8 @@
 // Package accounts manages the pool of Mozilla accounts, credential
-// persistence, instant 1-tap profile switching, background pre-warming of the
-// standby account at (Threshold - 5%), and 0-ms automatic failover when an
-// account's 5 GB monthly quota reaches the configured threshold.
+// persistence, instant 1-tap profile switching, live traffic accounting,
+// background pre-warming of the standby account at (Threshold - 5%), and
+// 0-ms automatic failover when an account's 5 GB monthly quota reaches
+// the configured threshold.
 package accounts
 
 import (
@@ -10,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -48,6 +50,7 @@ func (a *Account) HasWarmPass() bool {
 type Pool struct {
 	mu               sync.Mutex
 	prewarming       bool
+	unsavedBytes     int64
 	filePath         string
 	ThresholdPercent int        `json:"threshold_percent"`
 	Accounts         []*Account `json:"accounts"`
@@ -85,16 +88,81 @@ func (p *Pool) saveLocked() error {
 func (p *Pool) recomputeLocked() {
 	for i, acc := range p.Accounts {
 		acc.Position = i + 1
-		if acc.Usage != nil && !acc.Usage.Unlimited && acc.Usage.LimitBytes > 0 {
-			if acc.Usage.RemainingBytes <= 0 || acc.Usage.UsedPercent() >= float64(p.ThresholdPercent) {
-				if len(p.Accounts) > 1 {
-					acc.Status = StatusReserved
-					acc.Reason = "Достигнут порог месячной квоты 5 ГБ"
-				}
-			} else if acc.Status == StatusReserved {
-				acc.Status = StatusReady
-				acc.Reason = ""
+		if acc.Usage == nil || acc.Usage.LimitBytes <= 0 {
+			acc.Usage = guardian.DefaultQuotaUsage()
+		}
+		if acc.Usage.RemainingBytes < 0 {
+			acc.Usage.RemainingBytes = 0
+		}
+		if acc.Usage.RemainingBytes > acc.Usage.LimitBytes {
+			acc.Usage.RemainingBytes = acc.Usage.LimitBytes
+		}
+		if acc.Usage.RemainingBytes <= 0 || acc.Usage.UsedPercent() >= float64(p.ThresholdPercent) {
+			if len(p.Accounts) > 1 {
+				acc.Status = StatusReserved
+				acc.Reason = "Достигнут порог месячной квоты 5 ГБ"
 			}
+		} else if acc.Status == StatusReserved {
+			acc.Status = StatusReady
+			acc.Reason = ""
+		}
+	}
+}
+
+// RecordTraffic subtracts transferred bytes from the active account's RemainingBytes
+// and returns true if the active account has crossed ThresholdPercent.
+func (p *Pool) RecordTraffic(deltaBytes int64) (shouldRotate bool) {
+	if deltaBytes <= 0 {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	var active *Account
+	for _, a := range p.Accounts {
+		if a.Active {
+			active = a
+			break
+		}
+	}
+	if active == nil {
+		return false
+	}
+	if active.Usage == nil || active.Usage.LimitBytes <= 0 {
+		active.Usage = guardian.DefaultQuotaUsage()
+	}
+	active.Usage.RemainingBytes -= deltaBytes
+	if active.Usage.RemainingBytes < 0 {
+		active.Usage.RemainingBytes = 0
+	}
+
+	p.unsavedBytes += deltaBytes
+	if p.unsavedBytes >= 256*1024 {
+		p.unsavedBytes = 0
+		_ = p.saveLocked()
+	}
+
+	threshold := float64(p.ThresholdPercent)
+	usedPct := active.Usage.UsedPercent()
+	if usedPct >= (threshold - 5.0) {
+		go p.PrewarmNextReady(active.ID)
+	}
+	return usedPct >= threshold && len(p.Accounts) > 1
+}
+
+// UpdateQuotaFromHeaders updates the active account's quota if X-Quota-Limit / X-Quota-Remaining are present.
+func (p *Pool) UpdateQuotaFromHeaders(h http.Header) {
+	parsed := guardian.ParseQuotaHeaders(h)
+	if parsed == nil || parsed.Unlimited {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, a := range p.Accounts {
+		if a.Active {
+			a.Usage = parsed
+			_ = p.saveLocked()
+			break
 		}
 	}
 }
@@ -117,6 +185,11 @@ func (p *Pool) AddWithSessionToken(ctx context.Context, email, sessionTokenHex s
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	usage := pass.Usage
+	if usage == nil || usage.LimitBytes <= 0 {
+		usage = guardian.DefaultQuotaUsage()
+	}
+
 	acc := &Account{
 		ID:       "acc-" + hex.EncodeToString(idBytes[:]),
 		Email:    email,
@@ -125,7 +198,7 @@ func (p *Pool) AddWithSessionToken(ctx context.Context, email, sessionTokenHex s
 		Status:   StatusReady,
 		Tokens:   *tokens,
 		LastPass: pass,
-		Usage:    pass.Usage,
+		Usage:    usage,
 	}
 	p.Accounts = append(p.Accounts, acc)
 	_ = p.saveLocked()
@@ -133,8 +206,6 @@ func (p *Pool) AddWithSessionToken(ctx context.Context, email, sessionTokenHex s
 }
 
 // Activate immediately makes the given account ID active.
-// If the account already has a warm ProxyPass in memory, it returns in 0 ms and
-// refreshes quota in the background.
 func (p *Pool) Activate(ctx context.Context, id string) (*guardian.ProxyPass, error) {
 	p.mu.Lock()
 	var target *Account
@@ -171,7 +242,6 @@ func (p *Pool) Activate(ctx context.Context, id string) (*guardian.ProxyPass, er
 
 // EnsureFreshPass returns a valid ProxyPass for acc, refreshing OAuth or rotating
 // to the next account in the pool if acc's quota is exhausted.
-// When usage reaches (ThresholdPercent - 5%), it pre-warms the next standby account in the background.
 func (p *Pool) EnsureFreshPass(ctx context.Context, acc *Account) (*guardian.ProxyPass, error) {
 	if time.Now().After(acc.Tokens.ExpiresAt.Add(-2 * time.Minute)) {
 		refreshed, err := fxa.RefreshAccessToken(ctx, acc.Tokens.RefreshToken)
@@ -193,19 +263,22 @@ func (p *Pool) EnsureFreshPass(ctx context.Context, acc *Account) (*guardian.Pro
 	pass, err := guardian.FetchProxyPass(ctx, acc.Tokens.AccessToken)
 	p.mu.Lock()
 	threshold := float64(p.ThresholdPercent)
-	if pass != nil && pass.Usage != nil {
-		acc.Usage = pass.Usage
+	if pass != nil {
 		acc.LastPass = pass
+		if pass.Usage != nil && !pass.Usage.Unlimited && pass.Usage.LimitBytes > 0 {
+			acc.Usage = pass.Usage
+		} else if acc.Usage == nil || acc.Usage.LimitBytes <= 0 {
+			acc.Usage = guardian.DefaultQuotaUsage()
+		}
 	}
 	_ = p.saveLocked()
 	p.mu.Unlock()
 
-	if errors.Is(err, guardian.ErrQuotaExceeded) || (pass != nil && pass.Usage != nil && pass.Usage.UsedPercent() >= threshold) {
+	if errors.Is(err, guardian.ErrQuotaExceeded) || (acc.Usage != nil && acc.Usage.UsedPercent() >= threshold) {
 		return p.RotateToNextReady(ctx, acc.ID)
 	}
 
-	// Pre-warm standby account when active account crosses (Threshold - 5%)
-	if pass != nil && pass.Usage != nil && pass.Usage.UsedPercent() >= (threshold-5.0) {
+	if acc.Usage != nil && acc.Usage.UsedPercent() >= (threshold-5.0) {
 		go p.PrewarmNextReady(acc.ID)
 	}
 
@@ -246,7 +319,6 @@ func (p *Pool) PrewarmNextReady(activeID string) {
 }
 
 // RotateToNextReady finds the next enabled account with remaining quota and activates it.
-// If the standby account was already pre-warmed, returns its cached ProxyPass in 0 ms.
 func (p *Pool) RotateToNextReady(ctx context.Context, skipID string) (*guardian.ProxyPass, error) {
 	p.mu.Lock()
 	var candidate *Account
@@ -357,4 +429,13 @@ func (p *Pool) ActiveAccount() *Account {
 		return p.Accounts[0]
 	}
 	return nil
+}
+
+func (p *Pool) SnapshotAccounts() ([]*Account, int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.recomputeLocked()
+	out := make([]*Account, len(p.Accounts))
+	copy(out, p.Accounts)
+	return out, p.ThresholdPercent
 }

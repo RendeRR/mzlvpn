@@ -1,13 +1,14 @@
 // Package mobile is the gomobile bind entry point for Android (libs/core.aar).
 // Contains ONLY Mozilla account management (with 2FA/email code & WebChannel support),
-// automatic 5 GB quota rotation, Remote Settings server selection, and the local
-// SOCKS5 -> H2 CONNECT tunnel.
+// automatic 5 GB quota rotation, Remote Settings server selection with real 1-RTT
+// latency measurement, and the local SOCKS5 -> H2 CONNECT tunnel.
 package mobile
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -28,9 +29,9 @@ var (
 	connected        = false
 
 	// Pending 2-step login state when FxA requests an email/TOTP verification code
-	pendingEmail       string
-	pendingSessionHex  string
-	pendingVerifyMode  string // "email-2fa" or "totp-2fa"
+	pendingEmail      string
+	pendingSessionHex string
+	pendingVerifyMode string // "email-2fa" or "totp-2fa"
 )
 
 type ActionResult struct {
@@ -62,13 +63,45 @@ func Start(dataDir string, autoConnect bool) error {
 	pool = p
 	mu.Unlock()
 
+	engine.OnTrafficBytes = func(delta int64) {
+		if p.RecordTraffic(delta) {
+			go rotateActiveAccount(p)
+		}
+	}
+	engine.OnQuotaHeaders = func(h http.Header) {
+		p.UpdateQuotaFromHeaders(h)
+	}
+	engine.OnQuotaExhaust = func() {
+		rotateActiveAccount(p)
+	}
+
+	// Automatically fetch all 32 countries and measure real 1-RTT pings from the device
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-		defer cancel()
-		if list, err := serverlist.Fetch(ctx); err == nil && len(list) > 0 {
+		// 1. Measure real pings for initial list immediately (~1.5s)
+		_ = PingAllLocations()
+
+		// 2. Fetch full Remote Settings server list and measure real pings for all 32 locations
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		list, fetchErr := serverlist.Fetch(ctx)
+		cancel()
+		if fetchErr == nil && len(list) > 0 {
+			pingCtx, pingCancel := context.WithTimeout(context.Background(), 20*time.Second)
+			measured := serverlist.MeasureLatencies(pingCtx, list, func(c context.Context, endpoint string) (time.Duration, error) {
+				return tunnel.ProbeTLSHandshake(c, endpoint)
+			})
+			pingCancel()
 			mu.Lock()
-			locations = list
+			locations = measured
 			mu.Unlock()
+		}
+	}()
+
+	// Refresh active account quota in background on startup
+	go func() {
+		if active := p.ActiveAccount(); active != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+			defer cancel()
+			_, _ = p.EnsureFreshPass(ctx, active)
 		}
 	}()
 
@@ -76,6 +109,18 @@ func Start(dataDir string, autoConnect bool) error {
 		return Connect()
 	}
 	return nil
+}
+
+func rotateActiveAccount(p *accounts.Pool) {
+	active := p.ActiveAccount()
+	if active == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	if pass, err := p.RotateToNextReady(ctx, active.ID); err == nil && pass != nil {
+		engine.UpdateToken(pass.RawToken)
+	}
 }
 
 // Running reports whether the core has been initialized.
@@ -99,6 +144,31 @@ func Connect() error {
 	active := p.ActiveAccount()
 	if active == nil {
 		return errors.New("добавьте хотя бы один аккаунт Mozilla во вкладке Аккаунты")
+	}
+
+	// Start local SOCKS5 listener immediately using warm token if available
+	var initialToken string
+	if active.LastPass != nil && active.LastPass.RawToken != "" {
+		initialToken = active.LastPass.RawToken
+	}
+
+	if initialToken != "" && active.HasWarmPass() {
+		if _, err := engine.Start("127.0.0.1:0", loc.Endpoint(), initialToken); err != nil {
+			return err
+		}
+		mu.Lock()
+		connected = true
+		mu.Unlock()
+
+		// Refresh quota in the background without delaying tunnel startup
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+			defer cancel()
+			if pass, err := p.EnsureFreshPass(ctx, active); err == nil && pass != nil {
+				engine.UpdateToken(pass.RawToken)
+			}
+		}()
+		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -172,7 +242,6 @@ func SwitchAccount(accountID string) error {
 }
 
 // SignInPassword signs in with email + password (PBKDF2 + HKDF + HAWK) and returns a JSON ActionResult.
-// If FxA requires a 6-digit email confirmation code or TOTP code, it returns state="verify_email" or "verify_totp".
 func SignInPassword(email, password, unblockCode string) string {
 	mu.Lock()
 	p := pool
@@ -197,7 +266,7 @@ func SignInPassword(email, password, unblockCode string) string {
 		var apiErr *fxa.APIError
 		if errors.As(err, &apiErr) {
 			if apiErr.Status == 406 {
-				return jsonResult("need_browser", "Защита Fastly (HTTP 406) отклонила прямой запрос. Нажмите «Войти через браузер Mozilla».", email)
+				return jsonResult("need_browser", "Защита Fastly (HTTP 406) отклонила прямой запрос. Нажмите «Браузер».", email)
 			}
 			if apiErr.Errno == 125 {
 				_ = fxa.SendUnblockCode(ctx, email)
@@ -262,7 +331,6 @@ func VerifySignInCode(code string) string {
 			err = fxa.VerifySessionCode(ctx, sessionHex, cleanCode)
 		}
 		if err != nil {
-			// Check if session was already verified via email link or browser
 			if verified, vErr := fxa.SessionVerified(ctx, sessionHex); vErr != nil || !verified {
 				return jsonResult("error", "Код не принят Mozilla: "+err.Error(), email)
 			}
@@ -300,7 +368,6 @@ func AddAccountPassword(email, password string) error {
 }
 
 // AddAccountSessionToken adds an account using a 64-hex FxA sessionToken from WebChannel or manual paste.
-// If the session is unconfirmed (verified=false or errno 138), it stores the pending session and returns state="verify_email".
 func AddAccountSessionToken(email, sessionTokenHex string) string {
 	mu.Lock()
 	p := pool
@@ -407,28 +474,17 @@ func SetLocation(countryCode string) {
 	engine.SwitchServer(loc.Endpoint())
 }
 
-// PingAllLocations measures real HTTP/2 CONNECT (or TLS 1.3 ALPN h2 handshake if no account yet)
-// latency across all Mozilla locations.
+// PingAllLocations measures real 1-RTT latency across all Mozilla locations.
 func PingAllLocations() error {
 	mu.Lock()
-	p := pool
 	list := append([]serverlist.Location(nil), locations...)
 	mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	var bearerToken string
-	if p != nil {
-		if active := p.ActiveAccount(); active != nil {
-			if pass, err := p.EnsureFreshPass(ctx, active); err == nil && pass != nil {
-				bearerToken = pass.RawToken
-			}
-		}
-	}
-
 	measured := serverlist.MeasureLatencies(ctx, list, func(c context.Context, endpoint string) (time.Duration, error) {
-		return tunnel.ProbeLatency(c, endpoint, bearerToken)
+		return tunnel.ProbeTLSHandshake(c, endpoint)
 	})
 
 	mu.Lock()
@@ -444,24 +500,29 @@ func SocksPort() int {
 // StatusJSON returns the complete snapshot for the Android Jetpack Compose UI.
 func StatusJSON() string {
 	mu.Lock()
-	defer mu.Unlock()
+	p := pool
+	isConn := connected
+	selCode := selectedCode
+	selProto := selectedProtocol
+	curLoc := currentLocationLocked()
+	locsCopy := append([]serverlist.Location(nil), locations...)
+	mu.Unlock()
 
 	var accs []*accounts.Account
 	threshold := 95
-	if pool != nil {
-		accs = pool.Accounts
-		threshold = pool.ThresholdPercent
+	if p != nil {
+		accs, threshold = p.SnapshotAccounts()
 	}
 
 	payload := map[string]any{
-		"connected":         connected,
+		"connected":         isConn,
 		"socks_port":        engine.Port(),
-		"selected_location": selectedCode,
-		"tunnel_protocol":   selectedProtocol,
-		"location":          currentLocationLocked(),
+		"selected_location": selCode,
+		"tunnel_protocol":   selProto,
+		"location":          curLoc,
 		"threshold_percent": threshold,
 		"accounts":          accs,
-		"locations":         locations,
+		"locations":         locsCopy,
 	}
 	data, _ := json.Marshal(payload)
 	return string(data)

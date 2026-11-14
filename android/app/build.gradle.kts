@@ -4,6 +4,8 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+val ciRunNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+
 android {
     namespace = "app.mozillavpnlite"
     compileSdk = 35
@@ -25,8 +27,8 @@ android {
         applicationId = "app.mozillavpnlite"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0-lite"
+        versionCode = 100 + ciRunNumber
+        versionName = "1.0.$ciRunNumber-lite"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
@@ -41,11 +43,29 @@ android {
         }
     }
 
+    signingConfigs {
+        create("releaseFixed") {
+            val ksFile = file("release.p12")
+            if (ksFile.exists()) {
+                storeFile = ksFile
+                storePassword = "android"
+                keyAlias = "mozillavpnlite"
+                keyPassword = "android"
+                storeType = "PKCS12"
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             isShrinkResources = false
-            signingConfig = signingConfigs.getByName("debug")
+            val ksFile = file("release.p12")
+            signingConfig = if (ksFile.exists()) {
+                signingConfigs.getByName("releaseFixed")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

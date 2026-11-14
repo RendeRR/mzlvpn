@@ -45,11 +45,15 @@ data class CoreSnapshot(
 )
 
 object CoreBridge {
+    private const val FIVE_GB_BYTES = 5368709120L
 
     fun init(context: Context) {
-        try {
-            MinimalVpnService.startCore(context, on = false)
-        } catch (_: Throwable) {}
+        val appCtx = context.applicationContext
+        Thread {
+            try {
+                MinimalVpnService.startCore(appCtx, on = false)
+            } catch (_: Throwable) {}
+        }.start()
     }
 
     fun countryFlag(code: String): String {
@@ -61,12 +65,24 @@ object CoreBridge {
     }
 
     fun formatBytes(bytes: Long): String {
-        val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+        val safe = bytes.coerceAtLeast(0L)
+        val gb = safe.toDouble() / (1024.0 * 1024.0 * 1024.0)
         if (gb >= 0.1) {
             return String.format("%.2f ГБ", gb)
         }
-        val mb = bytes.toDouble() / (1024.0 * 1024.0)
-        return String.format("%.0f МБ", mb)
+        val mb = safe.toDouble() / (1024.0 * 1024.0)
+        if (mb >= 1.0) {
+            return String.format("%.0f МБ", mb)
+        }
+        if (safe > 0L) {
+            val kb = safe.toDouble() / 1024.0
+            return String.format("%.0f КБ", kb.coerceAtLeast(1.0))
+        }
+        return "0 МБ"
+    }
+
+    fun formatPing(latencyMs: Int): String {
+        return if (latencyMs > 0) "$latencyMs мс" else "…"
     }
 
     private fun parseActionOutcome(rawJson: String): ActionOutcome {
@@ -88,7 +104,11 @@ object CoreBridge {
         }
     }
 
-    fun getSnapshot(): CoreSnapshot {
+    suspend fun getSnapshot(): CoreSnapshot = withContext(Dispatchers.IO) {
+        fetchSnapshotSync()
+    }
+
+    private fun fetchSnapshotSync(): CoreSnapshot {
         return try {
             val raw = mobile.Mobile.statusJSON()
             val root = JSONObject(raw)
@@ -100,8 +120,13 @@ object CoreBridge {
             for (i in 0 until accArr.length()) {
                 val o = accArr.optJSONObject(i) ?: continue
                 val usage = o.optJSONObject("usage")
-                val limit = usage?.optLong("limit_bytes", 5368709120L) ?: 5368709120L
-                val rem = usage?.optLong("remaining_bytes", limit) ?: limit
+                val rawLimit = usage?.optLong("limit_bytes", FIVE_GB_BYTES) ?: FIVE_GB_BYTES
+                val limit = if (rawLimit <= 0L) FIVE_GB_BYTES else rawLimit
+                val rem = if (usage != null && rawLimit > 0L) {
+                    usage.optLong("remaining_bytes", limit).coerceIn(0L, limit)
+                } else {
+                    limit
+                }
                 val used = (limit - rem).coerceAtLeast(0L)
                 val isActive = o.optBoolean("active", false)
                 if (isActive) {
@@ -129,7 +154,7 @@ object CoreBridge {
                 val code = o.optString("code", "DE")
                 val nameEn = o.optString("name", code)
                 val nameRu = o.optString("name_ru", "").ifBlank { nameEn }
-                val ping = o.optLong("ping_ms", 24L).toInt().coerceAtLeast(1)
+                val ping = o.optLong("ping_ms", 0L).toInt().coerceAtLeast(0)
 
                 locations.add(
                     LocationItem(
@@ -170,7 +195,7 @@ object CoreBridge {
 
     suspend fun refreshServers() = withContext(Dispatchers.IO) {
         try {
-            // Locations are already loaded in mobile.Start(), trigger a lightweight probe if needed
+            // PingAllLocations is automatically launched in mobile.Start()
         } catch (_: Throwable) {}
     }
 
@@ -183,7 +208,7 @@ object CoreBridge {
 
     suspend fun selectAccount(idx: Int) = withContext(Dispatchers.IO) {
         try {
-            val snap = getSnapshot()
+            val snap = fetchSnapshotSync()
             val acc = snap.accounts.getOrNull(idx) ?: return@withContext
             mobile.Mobile.switchAccount(acc.id)
         } catch (_: Throwable) {}
@@ -244,7 +269,7 @@ object CoreBridge {
 
     suspend fun moveAccount(idx: Int, delta: Int) = withContext(Dispatchers.IO) {
         try {
-            val snap = getSnapshot()
+            val snap = fetchSnapshotSync()
             val acc = snap.accounts.getOrNull(idx) ?: return@withContext
             mobile.Mobile.moveAccount(acc.id, delta.toLong())
         } catch (_: Throwable) {}
@@ -252,7 +277,7 @@ object CoreBridge {
 
     suspend fun toggleAccountEnabled(idx: Int) = withContext(Dispatchers.IO) {
         try {
-            val snap = getSnapshot()
+            val snap = fetchSnapshotSync()
             val acc = snap.accounts.getOrNull(idx) ?: return@withContext
             mobile.Mobile.toggleAccountEnabled(acc.id)
         } catch (_: Throwable) {}
@@ -260,7 +285,7 @@ object CoreBridge {
 
     suspend fun removeAccount(idx: Int) = withContext(Dispatchers.IO) {
         try {
-            val snap = getSnapshot()
+            val snap = fetchSnapshotSync()
             val acc = snap.accounts.getOrNull(idx) ?: return@withContext
             mobile.Mobile.removeAccount(acc.id)
         } catch (_: Throwable) {}

@@ -1,6 +1,6 @@
 // Package serverlist fetches Mozilla's Remote Settings vpn-serverlist collection,
 // unlocks all locations (ignoring Firefox's locked flag), provides Russian country
-// names, and measures real tunnel latency over HTTP/2 CONNECT or TLS 1.3 RTT.
+// names, and measures real 1-RTT latency from the device to each Fastly node.
 package serverlist
 
 import (
@@ -58,35 +58,6 @@ var countryNamesRu = map[string]string{
 	"PH": "Филиппины",
 }
 
-var baseLatencyMS = map[string]int64{
-	"DE": 24,
-	"NL": 27,
-	"FI": 28,
-	"SE": 30,
-	"DK": 31,
-	"BE": 32,
-	"AT": 33,
-	"FR": 34,
-	"NO": 36,
-	"GB": 38,
-	"IT": 41,
-	"BG": 44,
-	"IE": 45,
-	"ES": 49,
-	"PT": 54,
-	"US": 88,
-	"CA": 94,
-	"SG": 148,
-	"JP": 162,
-	"KR": 171,
-	"ZA": 174,
-	"BR": 178,
-	"AR": 186,
-	"CL": 192,
-	"AU": 215,
-	"NZ": 228,
-}
-
 type Location struct {
 	Code       string `json:"code"`
 	Name       string `json:"name"`
@@ -95,7 +66,7 @@ type Location struct {
 	ServerHost string `json:"server_host"`
 	ServerPort int    `json:"server_port"`
 	Locked     bool   `json:"locked"`
-	PingMS     int64  `json:"ping_ms"`
+	PingMS     int64  `json:"ping_ms"` // 0 until measured by real network probe
 }
 
 func (l Location) Endpoint() string {
@@ -108,18 +79,18 @@ func (l Location) Endpoint() string {
 
 func DefaultLocations() []Location {
 	return []Location{
-		{Code: "DE", Name: "Germany", NameRu: "Германия", City: "Munich (MUC)", ServerHost: "muc139.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 24},
-		{Code: "NL", Name: "Netherlands", NameRu: "Нидерланды", City: "Rotterdam (EHRD)", ServerHost: "ehrd229.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 27},
-		{Code: "FI", Name: "Finland", NameRu: "Финляндия", City: "Helsinki (HEL)", ServerHost: "hel141.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 28},
-		{Code: "SE", Name: "Sweden", NameRu: "Швеция", City: "Stockholm (ESSB)", ServerHost: "essb127.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 30},
-		{Code: "DK", Name: "Denmark", NameRu: "Дания", City: "Copenhagen (CPH)", ServerHost: "cph232.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 31},
-		{Code: "BE", Name: "Belgium", NameRu: "Бельгия", City: "Brussels (BRU)", ServerHost: "bru148.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 32},
-		{Code: "AT", Name: "Austria", NameRu: "Австрия", City: "Vienna (VIE)", ServerHost: "vie63.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 33},
-		{Code: "FR", Name: "France", NameRu: "Франция", City: "Paris (LFPB)", ServerHost: "lfpb115.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 34},
-		{Code: "NO", Name: "Norway", NameRu: "Норвегия", City: "Oslo (OSL)", ServerHost: "osl65.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 36},
-		{Code: "GB", Name: "United Kingdom", NameRu: "Великобритания", City: "London (EGLC)", ServerHost: "eglc860.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 38},
-		{Code: "ES", Name: "Spain", NameRu: "Испания", City: "Madrid (LETO)", ServerHost: "leto235.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 49},
-		{Code: "US", Name: "United States", NameRu: "США", City: "United States (US)", ServerHost: "us.m1.fastly-masque.net", ServerPort: 2499, Locked: false, PingMS: 88},
+		{Code: "DE", Name: "Germany", NameRu: "Германия", City: "Munich (MUC)", ServerHost: "muc139.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 0},
+		{Code: "NL", Name: "Netherlands", NameRu: "Нидерланды", City: "Rotterdam (EHRD)", ServerHost: "ehrd229.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 0},
+		{Code: "FI", Name: "Finland", NameRu: "Финляндия", City: "Helsinki (HEL)", ServerHost: "hel141.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 0},
+		{Code: "SE", Name: "Sweden", NameRu: "Швеция", City: "Stockholm (ESSB)", ServerHost: "essb127.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 0},
+		{Code: "DK", Name: "Denmark", NameRu: "Дания", City: "Copenhagen (CPH)", ServerHost: "cph232.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 0},
+		{Code: "BE", Name: "Belgium", NameRu: "Бельгия", City: "Brussels (BRU)", ServerHost: "bru148.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 0},
+		{Code: "AT", Name: "Austria", NameRu: "Австрия", City: "Vienna (VIE)", ServerHost: "vie63.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 0},
+		{Code: "FR", Name: "France", NameRu: "Франция", City: "Paris (LFPB)", ServerHost: "lfpb115.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 0},
+		{Code: "NO", Name: "Norway", NameRu: "Норвегия", City: "Oslo (OSL)", ServerHost: "osl65.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 0},
+		{Code: "GB", Name: "United Kingdom", NameRu: "Великобритания", City: "London (EGLC)", ServerHost: "eglc860.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 0},
+		{Code: "ES", Name: "Spain", NameRu: "Испания", City: "Madrid (LETO)", ServerHost: "leto235.m1.fastly-masque.net", ServerPort: 2499, Locked: true, PingMS: 0},
+		{Code: "US", Name: "United States", NameRu: "США", City: "United States (US)", ServerHost: "us.m1.fastly-masque.net", ServerPort: 2499, Locked: false, PingMS: 0},
 	}
 }
 
@@ -138,7 +109,7 @@ type rsRecord struct {
 	} `json:"cities"`
 }
 
-// Fetch retrieves all non-quarantined Mozilla Fastly proxy locations and sorts them fastest-first.
+// Fetch retrieves all non-quarantined Mozilla Fastly proxy locations with PingMS = 0 (unmeasured).
 func Fetch(ctx context.Context) ([]Location, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, RemoteSettingsURL, nil)
 	if err != nil {
@@ -189,10 +160,6 @@ func Fetch(ctx context.Context) ([]Location, error) {
 				if nameRu == "" {
 					nameRu = rec.Name
 				}
-				ping := baseLatencyMS[code]
-				if ping <= 0 {
-					ping = 95 + int64((int(code[0])*7)%90)
-				}
 				out = append(out, Location{
 					Code:       code,
 					Name:       rec.Name,
@@ -201,7 +168,7 @@ func Fetch(ctx context.Context) ([]Location, error) {
 					ServerHost: srv.Hostname,
 					ServerPort: port,
 					Locked:     rec.Locked,
-					PingMS:     ping,
+					PingMS:     0,
 				})
 				break
 			}
@@ -229,12 +196,12 @@ func sortFastestFirst(locs []Location) {
 	})
 }
 
-// MeasureLatencies runs concurrent probes using dialProbe and sorts locations fastest-first.
+// MeasureLatencies runs concurrent real network probes using dialProbe and sorts locations by real measured RTT.
 func MeasureLatencies(ctx context.Context, locations []Location, dialProbe func(ctx context.Context, endpoint string) (time.Duration, error)) []Location {
 	results := make([]Location, len(locations))
 	copy(results, locations)
 
-	sem := make(chan struct{}, 8)
+	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
 
 	for i := range results {
@@ -250,14 +217,13 @@ func MeasureLatencies(ctx context.Context, locations []Location, dialProbe func(
 
 			d, err := dialProbe(ctx, results[idx].Endpoint())
 			if err == nil && d > 0 {
-				base := baseLatencyMS[results[idx].Code]
-				measured := d.Milliseconds()
-				if base > 0 && measured < base/2 {
-					// Calibrate anycast edge RTT with exit-node geographic offset
-					results[idx].PingMS = (base*7 + measured*5) / 10
-				} else {
-					results[idx].PingMS = measured
+				ms := d.Milliseconds()
+				if ms < 1 {
+					ms = 1
 				}
+				results[idx].PingMS = ms
+			} else {
+				results[idx].PingMS = 0
 			}
 		}(i)
 	}

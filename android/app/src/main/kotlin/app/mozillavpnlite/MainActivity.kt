@@ -62,6 +62,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         CoreBridge.init(this)
 
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 101)
+            }
+        }
+
         setContent {
             MaterialTheme(
                 colorScheme = darkColorScheme(
@@ -88,7 +94,7 @@ fun MozillaVpnLiteApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var snap by remember { mutableStateOf(CoreBridge.getSnapshot()) }
+    var snap by remember { mutableStateOf(CoreSnapshot()) }
     var tab by remember { mutableIntStateOf(0) } // 0 = Пульт, 1 = Аккаунты, 2 = Серверы
     var isConnecting by remember { mutableStateOf(false) }
     var isPinging by remember { mutableStateOf(false) }
@@ -206,7 +212,7 @@ fun MozillaVpnLiteApp() {
 
             if (snap.state == "connected" && activeLocation != null) {
                 Text(
-                    text = "${activeLocation.flag} ${activeLocation.code} · ${activeLocation.latencyMs} мс",
+                    text = "${activeLocation.flag} ${activeLocation.code} · ${CoreBridge.formatPing(activeLocation.latencyMs)}",
                     color = Color(0xFF34D399),
                     fontSize = 13.sp,
                     fontFamily = FontFamily.Monospace,
@@ -643,7 +649,7 @@ private fun HomeTabScreen(
 
                     if (activeLocation != null) {
                         Text(
-                            text = "${activeLocation.host}:${activeLocation.port} · ${activeLocation.latencyMs} мс",
+                            text = "${activeLocation.host}:${activeLocation.port} · ${CoreBridge.formatPing(activeLocation.latencyMs)}",
                             color = Color(0xFF94A3B8),
                             fontSize = 13.sp,
                             fontFamily = FontFamily.Monospace,
@@ -839,7 +845,7 @@ private fun HomeTabScreen(
                         QuickLocationTile(
                             flag = loc0.flag,
                             title = loc0.name,
-                            subtitle = "${loc0.latencyMs} мс",
+                            subtitle = CoreBridge.formatPing(loc0.latencyMs),
                             selected = selected0,
                             onClick = { onSelectLocation(loc0.code) },
                             modifier = Modifier.weight(1f)
@@ -858,7 +864,7 @@ private fun HomeTabScreen(
                             QuickLocationTile(
                                 flag = loc.flag,
                                 title = loc.name,
-                                subtitle = "${loc.latencyMs} мс",
+                                subtitle = CoreBridge.formatPing(loc.latencyMs),
                                 selected = isSelected,
                                 onClick = { onSelectLocation(loc.code) },
                                 modifier = Modifier.weight(1f)
@@ -878,7 +884,7 @@ private fun HomeTabScreen(
                             QuickLocationTile(
                                 flag = loc.flag,
                                 title = loc.name,
-                                subtitle = "${loc.latencyMs} мс",
+                                subtitle = CoreBridge.formatPing(loc.latencyMs),
                                 selected = isSelected,
                                 onClick = { onSelectLocation(loc.code) },
                                 modifier = Modifier.weight(1f)
@@ -1771,8 +1777,9 @@ private fun ServersTabScreen(
             itemsIndexed(filteredLocations, key = { _, it -> it.code }) { idx, loc ->
                 val isSelected = snap.selectedLocation.equals(loc.code, ignoreCase = true)
                 val latencyColor = when {
-                    loc.latencyMs < 45 -> Color(0xFF34D399)
-                    loc.latencyMs < 110 -> Color(0xFFFBBF24)
+                    loc.latencyMs <= 0 -> Color(0xFF64748B)
+                    loc.latencyMs < 65 -> Color(0xFF34D399)
+                    loc.latencyMs < 140 -> Color(0xFFFBBF24)
                     else -> Color(0xFF94A3B8)
                 }
 
@@ -1816,7 +1823,7 @@ private fun ServersTabScreen(
                         Spacer(modifier = Modifier.width(8.dp))
 
                         Text(
-                            text = "${loc.latencyMs} мс",
+                            text = CoreBridge.formatPing(loc.latencyMs),
                             color = latencyColor,
                             fontSize = 13.sp,
                             fontFamily = FontFamily.Monospace,
