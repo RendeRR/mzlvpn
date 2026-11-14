@@ -1,6 +1,7 @@
 // Package fxa implements Mozilla Firefox Accounts authentication:
-// PBKDF2 + HKDF password stretching, HAWK request signing, session login,
-// PKCE OAuth code exchange, and access token refresh.
+// PBKDF2 + HKDF password stretching, HAWK request signing, session login
+// (with email-2fa code verification, TOTP, and unblock codes), OAuth token
+// exchange (fxa-credentials + PKCE fallback), and access token refresh.
 package fxa
 
 import (
@@ -16,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
@@ -25,26 +27,70 @@ import (
 )
 
 const (
-	AuthServer       = "https://api.accounts.firefox.com/v1"
-	OAuthTokenURL    = "https://oauth.accounts.firefox.com/v1/token"
-	FirefoxClientID  = "5882386c6d801776"
-	OAuthScope       = "profile https://identity.mozilla.com/apps/vpn"
-	FirefoxUserAgent = "Mozilla/5.0 (Android 14; Mobile; rv:145.0) Gecko/145.0 Firefox/145.0"
+	AuthServer    = "https://api.accounts.firefox.com/v1"
+	OAuthTokenURL = "https://oauth.accounts.firefox.com/v1/token"
+	FirefoxClientID = "5882386c6d801776"
+	OAuthScope      = "profile https://identity.mozilla.com/apps/vpn"
 
-	protocolVersion          = "identity.mozilla.com/picl/v1/"
-	pbkdf2Rounds             = 1000
-	stretchedPWLen           = 32
-	hkdfLen                  = 32
-	errnoIncorrectEmailCase  = 120
+	// Desktop Firefox User-Agent + Accept-Encoding: identity prevents HTTP 406 on FxA/OAuth
+	FirefoxUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:148.0) Gecko/20100101 Firefox/148.0"
+
+	protocolVersion         = "identity.mozilla.com/picl/v1/"
+	pbkdf2Rounds            = 1000
+	stretchedPWLen          = 32
+	hkdfLen                 = 32
+	errnoInvalidParameter   = 107
+	errnoIncorrectEmailCase = 120
+	errnoRequestBlocked     = 125
+	errnoUnverifiedSession  = 138
 )
 
-var ErrReauthRequired = errors.New("требуется повторный вход в аккаунт Mozilla")
+var (
+	ErrReauthRequired = errors.New("требуется повторный вход в аккаунт Mozilla")
+	fxaHTTPClient     = func() *http.Client {
+		jar, _ := cookiejar.New(nil)
+		return &http.Client{
+			Timeout: 20 * time.Second,
+			Jar:     jar,
+		}
+	}()
+)
+
+func ApplyFirefoxHeaders(req *http.Request) {
+	req.Header.Set("User-Agent", FirefoxUserAgent)
+	req.Header.Set("Accept", "application/json;q=0.9,*/*;q=0.2")
+	req.Header.Set("Accept-Language", "en-US, en")
+	req.Header.Set("Accept-Encoding", "identity")
+}
 
 type OAuthTokens struct {
 	AccessToken  string    `json:"access_token"`
 	RefreshToken string    `json:"refresh_token"`
 	ExpiresIn    int       `json:"expires_in"`
 	ExpiresAt    time.Time `json:"expires_at"`
+}
+
+type LoginResponse struct {
+	UID                string `json:"uid"`
+	SessionToken       string `json:"sessionToken"`
+	Verified           bool   `json:"verified"`
+	VerificationMethod string `json:"verificationMethod"`
+	VerificationReason string `json:"verificationReason"`
+	Email              string `json:"email"`
+}
+
+type APIError struct {
+	Status  int    `json:"status"`
+	Errno   int    `json:"errno"`
+	Email   string `json:"email"`
+	Message string `json:"message"`
+}
+
+func (e *APIError) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("FxA HTTP %d (errno %d): %s", e.Status, e.Errno, e.Message)
+	}
+	return fmt.Sprintf("FxA HTTP %d (errno %d)", e.Status, e.Errno)
 }
 
 // DeriveAuthPW stretches email + password using 1000 rounds of PBKDF2-SHA256
@@ -65,7 +111,7 @@ func DeriveAuthPW(email, password string) ([]byte, error) {
 func DeriveHawkCredentials(tokenHex, contextName string) (id string, key []byte, err error) {
 	tokenBytes, err := hex.DecodeString(strings.TrimSpace(tokenHex))
 	if err != nil {
-		return "", nil, fmt.Errorf("invalid token hex: %w", err)
+		return "", nil, fmt.Errorf("некорректный hex-токен: %w", err)
 	}
 	info := []byte(protocolVersion + contextName)
 	hkdfReader := hkdf.New(sha256.New, tokenBytes, nil, info)
@@ -131,79 +177,255 @@ func HawkHeader(method, rawURL, hawkID string, hawkKey []byte, payload string) (
 	return header, nil
 }
 
-// LoginWithPassword signs in to FxA and returns a sessionToken (64-hex).
-// Automatically retries once if FxA reports errno 120 (canonical email case mismatch).
-func LoginWithPassword(ctx context.Context, email, password string) (sessionToken string, canonicalEmail string, err error) {
-	email = strings.TrimSpace(strings.ToLower(email))
-	tok, corrEmail, err := loginAttempt(ctx, email, "", password)
-	if err != nil && corrEmail != "" && corrEmail != email {
-		return loginAttempt(ctx, corrEmail, email, password)
+// LoginWithPassword signs in to FxA using the exact desktop Firefox payload.
+// Automatically retries if FxA reports errno 120 (email case mismatch) or errno 107.
+func LoginWithPassword(ctx context.Context, email, password, unblockCode string) (*LoginResponse, error) {
+	email = strings.TrimSpace(email)
+	resp, err := loginAs(ctx, email, "", password, unblockCode)
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Errno == errnoIncorrectEmailCase && apiErr.Email != "" && apiErr.Email != email {
+		return loginAs(ctx, apiErr.Email, email, password, unblockCode)
 	}
-	return tok, email, err
+	return resp, err
 }
 
-func loginAttempt(ctx context.Context, stretchEmail, originalEmail, password string) (string, string, error) {
+func loginAs(ctx context.Context, stretchEmail, originalEmail, password, unblockCode string) (*LoginResponse, error) {
+	resp, err := loginAttempt(ctx, stretchEmail, originalEmail, password, "email-2fa", unblockCode)
+	var apiErr *APIError
+	if errors.As(err, &apiErr) && apiErr.Errno == errnoInvalidParameter {
+		resp, err = loginAttempt(ctx, stretchEmail, originalEmail, password, "", unblockCode)
+	}
+	if err != nil {
+		return nil, err
+	}
+	resp.Email = stretchEmail
+	return resp, nil
+}
+
+func loginAttempt(ctx context.Context, stretchEmail, originalEmail, password, verificationMethod, unblockCode string) (*LoginResponse, error) {
 	authPW, err := DeriveAuthPW(stretchEmail, password)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
-	bodyMap := map[string]any{
-		"email":              stretchEmail,
-		"authPW":             hex.EncodeToString(authPW),
-		"reason":             "login",
-		"service":            FirefoxClientID,
-		"verificationMethod": "email-2fa",
+	bodyMap := map[string]string{
+		"email":  stretchEmail,
+		"authPW": hex.EncodeToString(authPW),
 	}
 	if originalEmail != "" {
 		bodyMap["originalLoginEmail"] = originalEmail
 	}
+	if verificationMethod != "" {
+		bodyMap["verificationMethod"] = verificationMethod
+	}
+	if strings.TrimSpace(unblockCode) != "" {
+		bodyMap["unblockCode"] = strings.ToUpper(strings.TrimSpace(unblockCode))
+	}
 	bodyBytes, _ := json.Marshal(bodyMap)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, AuthServer+"/account/login?keys=true", bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, AuthServer+"/account/login", bytes.NewReader(bodyBytes))
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", FirefoxUserAgent)
+	ApplyFirefoxHeaders(req)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := fxaHTTPClient.Do(req)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, 32*1024))
 	if resp.StatusCode != http.StatusOK {
-		var apiErr struct {
-			Errno   int    `json:"errno"`
-			Email   string `json:"email"`
-			Message string `json:"message"`
-		}
-		_ = json.Unmarshal(data, &apiErr)
-		if apiErr.Errno == errnoIncorrectEmailCase && apiErr.Email != "" {
-			return "", apiErr.Email, fmt.Errorf("email case mismatch")
-		}
-		return "", "", fmt.Errorf("FxA login HTTP %d (errno %d): %s", resp.StatusCode, apiErr.Errno, apiErr.Message)
+		apiErr := &APIError{Status: resp.StatusCode}
+		_ = json.Unmarshal(data, apiErr)
+		return nil, apiErr
 	}
 
-	var loginResp struct {
-		SessionToken string `json:"sessionToken"`
-	}
+	var loginResp LoginResponse
 	if err := json.Unmarshal(data, &loginResp); err != nil || loginResp.SessionToken == "" {
-		return "", "", errors.New("пустой sessionToken в ответе FxA")
+		return nil, errors.New("пустой sessionToken в ответе FxA")
 	}
-	return loginResp.SessionToken, stretchEmail, nil
+	return &loginResp, nil
 }
 
-// ExchangeSessionForOAuth exchanges a 64-hex FxA sessionToken for OAuth access & refresh tokens
-// using HAWK authentication and PKCE fallback.
+// SendUnblockCode requests FxA to email an 8-character unblock code when errno 125 occurs.
+func SendUnblockCode(ctx context.Context, email string) error {
+	bodyBytes, _ := json.Marshal(map[string]string{"email": strings.TrimSpace(email)})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, AuthServer+"/account/login/send_unblock_code", bytes.NewReader(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	ApplyFirefoxHeaders(req)
+
+	resp, err := fxaHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("send_unblock_code HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// VerifySessionCode confirms an unverified sessionToken using the 6-digit code
+// sent to the account's email (POST /v1/session/verify_code).
+func VerifySessionCode(ctx context.Context, sessionTokenHex, code string) error {
+	hawkID, hawkKey, err := DeriveHawkCredentials(sessionTokenHex, "sessionToken")
+	if err != nil {
+		return err
+	}
+	cleanCode := strings.Map(func(r rune) rune {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') {
+			return r
+		}
+		return -1
+	}, code)
+
+	bodyBytes, _ := json.Marshal(map[string]string{"code": cleanCode})
+	verifyURL := AuthServer + "/session/verify_code"
+	authHeader, err := HawkHeader(http.MethodPost, verifyURL, hawkID, hawkKey, string(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, verifyURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+	ApplyFirefoxHeaders(req)
+
+	resp, err := fxaHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
+		apiErr := &APIError{Status: resp.StatusCode}
+		_ = json.Unmarshal(data, apiErr)
+		return apiErr
+	}
+	return nil
+}
+
+// VerifySessionTOTP confirms an unverified sessionToken using a 6-digit TOTP authenticator code.
+func VerifySessionTOTP(ctx context.Context, sessionTokenHex, code string) error {
+	hawkID, hawkKey, err := DeriveHawkCredentials(sessionTokenHex, "sessionToken")
+	if err != nil {
+		return err
+	}
+	cleanCode := strings.TrimSpace(code)
+	bodyBytes, _ := json.Marshal(map[string]string{"code": cleanCode})
+	verifyURL := AuthServer + "/session/verify/totp"
+	authHeader, err := HawkHeader(http.MethodPost, verifyURL, hawkID, hawkKey, string(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, verifyURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+	ApplyFirefoxHeaders(req)
+
+	resp, err := fxaHTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
+	if resp.StatusCode != http.StatusOK {
+		apiErr := &APIError{Status: resp.StatusCode}
+		_ = json.Unmarshal(data, apiErr)
+		return apiErr
+	}
+	var res struct {
+		Success bool `json:"success"`
+	}
+	if err := json.Unmarshal(data, &res); err != nil || !res.Success {
+		return errors.New("неверный 2FA TOTP код")
+	}
+	return nil
+}
+
+// SessionVerified checks GET /v1/recovery_email/status to see if a browser sessionToken is verified.
+func SessionVerified(ctx context.Context, sessionTokenHex string) (bool, error) {
+	hawkID, hawkKey, err := DeriveHawkCredentials(sessionTokenHex, "sessionToken")
+	if err != nil {
+		return false, err
+	}
+	statusURL := AuthServer + "/recovery_email/status"
+	authHeader, err := HawkHeader(http.MethodGet, statusURL, hawkID, hawkKey, "")
+	if err != nil {
+		return false, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", authHeader)
+	ApplyFirefoxHeaders(req)
+
+	resp, err := fxaHTTPClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("recovery_email/status HTTP %d", resp.StatusCode)
+	}
+	var st struct {
+		Verified bool `json:"verified"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&st); err != nil {
+		return false, err
+	}
+	return st.Verified, nil
+}
+
+// ExchangeSessionForOAuth exchanges a 64-hex FxA sessionToken for OAuth access & refresh tokens.
+// Tries direct fxa-credentials grant first, then falls back to PKCE S256 authorization code.
 func ExchangeSessionForOAuth(ctx context.Context, sessionTokenHex string) (*OAuthTokens, error) {
 	hawkID, hawkKey, err := DeriveHawkCredentials(sessionTokenHex, "sessionToken")
 	if err != nil {
 		return nil, err
 	}
 
-	// PKCE code verifier + S256 challenge
+	// 1. Try direct grant_type = "fxa-credentials" on /v1/oauth/token
+	directURL := AuthServer + "/oauth/token"
+	directBody, _ := json.Marshal(map[string]string{
+		"client_id":   FirefoxClientID,
+		"grant_type":  "fxa-credentials",
+		"scope":       OAuthScope,
+		"access_type": "offline",
+	})
+	if directHeader, err := HawkHeader(http.MethodPost, directURL, hawkID, hawkKey, string(directBody)); err == nil {
+		if req, err := http.NewRequestWithContext(ctx, http.MethodPost, directURL, bytes.NewReader(directBody)); err == nil {
+			req.Header.Set("Content-Type", "application/json; charset=utf-8")
+			req.Header.Set("Authorization", directHeader)
+			ApplyFirefoxHeaders(req)
+			if resp, err := fxaHTTPClient.Do(req); err == nil {
+				data, _ := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
+				resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					var out OAuthTokens
+					if json.Unmarshal(data, &out) == nil && out.AccessToken != "" {
+						out.ExpiresAt = time.Now().Add(time.Duration(out.ExpiresIn) * time.Second)
+						return &out, nil
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Fallback: PKCE code verifier + S256 challenge via /v1/oauth/authorization
 	var verifierBytes [32]byte
 	if _, err := rand.Read(verifierBytes[:]); err != nil {
 		return nil, err
@@ -233,24 +455,27 @@ func ExchangeSessionForOAuth(ctx context.Context, sessionTokenHex string) (*OAut
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("User-Agent", FirefoxUserAgent)
+	ApplyFirefoxHeaders(req)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := fxaHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("OAuth authorization HTTP %d", resp.StatusCode)
+		apiErr := &APIError{Status: resp.StatusCode}
+		_ = json.Unmarshal(data, apiErr)
+		return nil, apiErr
 	}
 
 	var codeResp struct {
 		Code string `json:"code"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&codeResp); err != nil || codeResp.Code == "" {
+	if err := json.Unmarshal(data, &codeResp); err != nil || codeResp.Code == "" {
 		return nil, errors.New("не получен код авторизации OAuth")
 	}
 
@@ -264,10 +489,10 @@ func ExchangeSessionForOAuth(ctx context.Context, sessionTokenHex string) (*OAut
 	if err != nil {
 		return nil, err
 	}
-	tokReq.Header.Set("Content-Type", "application/json")
-	tokReq.Header.Set("User-Agent", FirefoxUserAgent)
+	tokReq.Header.Set("Content-Type", "application/json; charset=utf-8")
+	ApplyFirefoxHeaders(tokReq)
 
-	tokResp, err := http.DefaultClient.Do(tokReq)
+	tokResp, err := fxaHTTPClient.Do(tokReq)
 	if err != nil {
 		return nil, err
 	}
@@ -297,10 +522,10 @@ func RefreshAccessToken(ctx context.Context, refreshToken string) (*OAuthTokens,
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", FirefoxUserAgent)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	ApplyFirefoxHeaders(req)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := fxaHTTPClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

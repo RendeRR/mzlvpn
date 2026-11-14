@@ -274,6 +274,27 @@ func (p *Pool) RotateToNextReady(ctx context.Context, skipID string) (*guardian.
 	return p.EnsureFreshPass(ctx, candidate)
 }
 
+func (p *Pool) ToggleEnabled(id string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, a := range p.Accounts {
+		if a.ID == id {
+			a.Enabled = !a.Enabled
+			if !a.Enabled && a.Active {
+				a.Active = false
+				for _, other := range p.Accounts {
+					if other.ID != id && other.Enabled {
+						other.Active = true
+						break
+					}
+				}
+			}
+			return p.saveLocked()
+		}
+	}
+	return nil
+}
+
 func (p *Pool) Move(id string, delta int) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

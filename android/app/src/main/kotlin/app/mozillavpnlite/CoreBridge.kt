@@ -1,5 +1,8 @@
 package app.mozillavpnlite
 
+import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -8,55 +11,114 @@ data class AccountItem(
     val email: String,
     val position: Int,
     val active: Boolean,
-    val status: String,
-    val usedPercent: Int,
-    val remainingGb: String
+    val enabled: Boolean,
+    val exhausted: Boolean,
+    val usedBytes: Long,
+    val limitBytes: Long
 )
 
 data class LocationItem(
     val code: String,
+    val flag: String,
     val name: String,
     val city: String,
-    val serverHost: String,
-    val pingMs: Long
+    val host: String,
+    val port: Int,
+    val latencyMs: Int
+)
+
+data class ActionOutcome(
+    val ok: Boolean,
+    val state: String,
+    val message: String,
+    val email: String = ""
 )
 
 data class CoreSnapshot(
-    val connected: Boolean = false,
+    val state: String = "disconnected",
     val selectedLocation: String = "DE",
-    val activeLocationName: String = "Germany",
-    val activeServerHost: String = "fra104.m1.fastly-masque.net:2499",
-    val thresholdPercent: Int = 95,
+    val protocol: String = "h3",
+    val activeAccount: Int = 0,
+    val thresholdPct: Int = 95,
     val accounts: List<AccountItem> = emptyList(),
     val locations: List<LocationItem> = emptyList()
 )
 
 object CoreBridge {
-    fun fetchSnapshot(): CoreSnapshot {
+
+    fun init(context: Context) {
+        try {
+            MinimalVpnService.startCore(context, on = false)
+        } catch (_: Throwable) {}
+    }
+
+    fun countryFlag(code: String): String {
+        val clean = code.trim().uppercase()
+        if (clean.length != 2) return "🌐"
+        val first = Character.codePointAt(clean, 0) - 0x41 + 0x1F1E6
+        val second = Character.codePointAt(clean, 1) - 0x41 + 0x1F1E6
+        return String(Character.toChars(first)) + String(Character.toChars(second))
+    }
+
+    fun formatBytes(bytes: Long): String {
+        val gb = bytes.toDouble() / (1024.0 * 1024.0 * 1024.0)
+        if (gb >= 0.1) {
+            return String.format("%.2f ГБ", gb)
+        }
+        val mb = bytes.toDouble() / (1024.0 * 1024.0)
+        return String.format("%.0f МБ", mb)
+    }
+
+    private fun parseActionOutcome(rawJson: String): ActionOutcome {
+        return try {
+            val obj = JSONObject(rawJson)
+            val state = obj.optString("state", "error")
+            ActionOutcome(
+                ok = state == "ok",
+                state = state,
+                message = obj.optString("message", "Неизвестный ответ ядра"),
+                email = obj.optString("email", "")
+            )
+        } catch (t: Throwable) {
+            ActionOutcome(
+                ok = false,
+                state = "error",
+                message = t.message ?: "Ошибка разбора ответа ядра"
+            )
+        }
+    }
+
+    fun getSnapshot(): CoreSnapshot {
         return try {
             val raw = mobile.Mobile.statusJSON()
             val root = JSONObject(raw)
-            val locObj = root.optJSONObject("location")
             val accArr = root.optJSONArray("accounts") ?: JSONArray()
             val locArr = root.optJSONArray("locations") ?: JSONArray()
 
             val accounts = mutableListOf<AccountItem>()
+            var activeIdx = 0
             for (i in 0 until accArr.length()) {
                 val o = accArr.optJSONObject(i) ?: continue
                 val usage = o.optJSONObject("usage")
                 val limit = usage?.optLong("limit_bytes", 5368709120L) ?: 5368709120L
                 val rem = usage?.optLong("remaining_bytes", limit) ?: limit
-                val usedPct = if (limit > 0) (((limit - rem) * 100L) / limit).toInt() else 0
-                val remGb = String.format("%.2f ГБ", rem.toDouble() / (1024.0 * 1024.0 * 1024.0))
+                val used = (limit - rem).coerceAtLeast(0L)
+                val isActive = o.optBoolean("active", false)
+                if (isActive) {
+                    activeIdx = i
+                }
+                val statusStr = o.optString("status", "ready")
+
                 accounts.add(
                     AccountItem(
                         id = o.optString("id"),
                         email = o.optString("email"),
                         position = o.optInt("position", i + 1),
-                        active = o.optBoolean("active", false),
-                        status = o.optString("status", "ready"),
-                        usedPercent = usedPct,
-                        remainingGb = remGb
+                        active = isActive,
+                        enabled = o.optBoolean("enabled", true),
+                        exhausted = statusStr == "reserved" || rem <= 0L,
+                        usedBytes = used,
+                        limitBytes = limit
                     )
                 )
             }
@@ -64,28 +126,155 @@ object CoreBridge {
             val locations = mutableListOf<LocationItem>()
             for (i in 0 until locArr.length()) {
                 val o = locArr.optJSONObject(i) ?: continue
+                val code = o.optString("code", "DE")
+                val nameEn = o.optString("name", code)
+                val nameRu = o.optString("name_ru", "").ifBlank { nameEn }
+                val ping = o.optLong("ping_ms", 24L).toInt().coerceAtLeast(1)
+
                 locations.add(
                     LocationItem(
-                        code = o.optString("code"),
-                        name = o.optString("name"),
-                        city = o.optString("city"),
-                        serverHost = o.optString("server_host"),
-                        pingMs = o.optLong("ping_ms", 0L)
+                        code = code,
+                        flag = countryFlag(code),
+                        name = nameRu,
+                        city = o.optString("city", nameEn),
+                        host = o.optString("server_host", "muc139.m1.fastly-masque.net"),
+                        port = o.optInt("server_port", 2499),
+                        latencyMs = ping
                     )
                 )
             }
 
+            val isConnected = root.optBoolean("connected", false) || MinimalVpnService.isRunning
+            val protoRaw = root.optString("tunnel_protocol", "HTTP/3 MASQUE (QUIC)")
+            val protoShort = if (protoRaw.contains("HTTP/2", ignoreCase = true) || protoRaw == "h2") "h2" else "h3"
+            val selLoc = root.optString("selected_location", "DE").let {
+                when {
+                    it.isBlank() || it.equals("REC", ignoreCase = true) -> "recommended"
+                    else -> it
+                }
+            }
+
             CoreSnapshot(
-                connected = root.optBoolean("connected", false),
-                selectedLocation = root.optString("selected_location", "DE"),
-                activeLocationName = locObj?.optString("name", "Germany") ?: "Germany",
-                activeServerHost = "${locObj?.optString("server_host", "fra104.m1.fastly-masque.net")}:${locObj?.optInt("server_port", 2499) ?: 2499}",
-                thresholdPercent = root.optInt("threshold_percent", 95),
+                state = if (isConnected) "connected" else "disconnected",
+                selectedLocation = selLoc,
+                protocol = protoShort,
+                activeAccount = activeIdx,
+                thresholdPct = root.optInt("threshold_percent", 95),
                 accounts = accounts,
                 locations = locations
             )
         } catch (_: Throwable) {
             CoreSnapshot()
         }
+    }
+
+    suspend fun refreshServers() = withContext(Dispatchers.IO) {
+        try {
+            // Locations are already loaded in mobile.Start(), trigger a lightweight probe if needed
+        } catch (_: Throwable) {}
+    }
+
+    suspend fun setProtocol(proto: String) = withContext(Dispatchers.IO) {
+        try {
+            val label = if (proto == "h2") "HTTP/2 CONNECT (TLS 1.3)" else "HTTP/3 MASQUE (QUIC)"
+            mobile.Mobile.setProtocol(label)
+        } catch (_: Throwable) {}
+    }
+
+    suspend fun selectAccount(idx: Int) = withContext(Dispatchers.IO) {
+        try {
+            val snap = getSnapshot()
+            val acc = snap.accounts.getOrNull(idx) ?: return@withContext
+            mobile.Mobile.switchAccount(acc.id)
+        } catch (_: Throwable) {}
+    }
+
+    suspend fun selectLocation(code: String) = withContext(Dispatchers.IO) {
+        try {
+            val mapped = if (code == "recommended") "REC" else code
+            mobile.Mobile.setLocation(mapped)
+        } catch (_: Throwable) {}
+    }
+
+    suspend fun signInPassword(
+        email: String,
+        password: String,
+        unblockCode: String
+    ): ActionOutcome = withContext(Dispatchers.IO) {
+        try {
+            val raw = mobile.Mobile.signInPassword(email, password, unblockCode)
+            parseActionOutcome(raw)
+        } catch (t: Throwable) {
+            ActionOutcome(
+                ok = false,
+                state = "error",
+                message = t.message ?: "Ошибка входа в аккаунт Mozilla"
+            )
+        }
+    }
+
+    suspend fun verifySignInCode(code: String): ActionOutcome = withContext(Dispatchers.IO) {
+        try {
+            val raw = mobile.Mobile.verifySignInCode(code)
+            parseActionOutcome(raw)
+        } catch (t: Throwable) {
+            ActionOutcome(
+                ok = false,
+                state = "error",
+                message = t.message ?: "Ошибка проверки 6-значного кода"
+            )
+        }
+    }
+
+    suspend fun addAccountSessionToken(
+        email: String,
+        sessionToken: String
+    ): ActionOutcome = withContext(Dispatchers.IO) {
+        try {
+            val raw = mobile.Mobile.addAccountSessionToken(email, sessionToken)
+            parseActionOutcome(raw)
+        } catch (t: Throwable) {
+            ActionOutcome(
+                ok = false,
+                state = "error",
+                message = t.message ?: "Ошибка добавления по sessionToken"
+            )
+        }
+    }
+
+    suspend fun moveAccount(idx: Int, delta: Int) = withContext(Dispatchers.IO) {
+        try {
+            val snap = getSnapshot()
+            val acc = snap.accounts.getOrNull(idx) ?: return@withContext
+            mobile.Mobile.moveAccount(acc.id, delta.toLong())
+        } catch (_: Throwable) {}
+    }
+
+    suspend fun toggleAccountEnabled(idx: Int) = withContext(Dispatchers.IO) {
+        try {
+            val snap = getSnapshot()
+            val acc = snap.accounts.getOrNull(idx) ?: return@withContext
+            mobile.Mobile.toggleAccountEnabled(acc.id)
+        } catch (_: Throwable) {}
+    }
+
+    suspend fun removeAccount(idx: Int) = withContext(Dispatchers.IO) {
+        try {
+            val snap = getSnapshot()
+            val acc = snap.accounts.getOrNull(idx) ?: return@withContext
+            mobile.Mobile.removeAccount(acc.id)
+        } catch (_: Throwable) {}
+    }
+
+    suspend fun setThreshold(pct: Int) = withContext(Dispatchers.IO) {
+        try {
+            mobile.Mobile.setThreshold(pct.toLong())
+        } catch (_: Throwable) {}
+    }
+
+    suspend fun pingAll() = withContext(Dispatchers.IO) {
+        try {
+            mobile.Mobile.pingAllLocations()
+        } catch (_: Throwable) {}
     }
 }

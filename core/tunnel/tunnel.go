@@ -301,8 +301,12 @@ func (e *Engine) openH2ConnectStream(ctx context.Context, targetAuthority string
 }
 
 // ProbeLatency measures the round-trip time of an HTTP/2 CONNECT to www.google.com:443
-// through the given Mozilla Fastly proxy endpoint.
+// through the given Mozilla Fastly proxy endpoint. Does not require an account if bearerToken is empty
+// (falls back to TLS 1.3 ALPN h2 handshake RTT).
 func ProbeLatency(ctx context.Context, proxyEndpoint, bearerToken string) (time.Duration, error) {
+	if bearerToken == "" {
+		return ProbeTLSHandshake(ctx, proxyEndpoint)
+	}
 	eng := NewEngine()
 	eng.proxyHost = proxyEndpoint
 	eng.bearerToken = bearerToken
@@ -323,5 +327,33 @@ func ProbeLatency(ctx context.Context, proxyEndpoint, bearerToken string) (time.
 	elapsed := time.Since(start)
 	_ = wc.Close()
 	_ = rc.Close()
+	return elapsed, nil
+}
+
+// ProbeTLSHandshake measures real TCP + TLS 1.3 ALPN h2 handshake latency to a Fastly node
+// without requiring a ProxyPass token.
+func ProbeTLSHandshake(ctx context.Context, proxyEndpoint string) (time.Duration, error) {
+	host, _, err := net.SplitHostPort(proxyEndpoint)
+	if err != nil {
+		return 0, err
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	dialer := &tls.Dialer{
+		NetDialer: &net.Dialer{Timeout: 5 * time.Second},
+		Config: &tls.Config{
+			ServerName: host,
+			MinVersion: tls.VersionTLS13,
+			NextProtos: []string{"h2"},
+		},
+	}
+	conn, err := dialer.DialContext(probeCtx, "tcp", proxyEndpoint)
+	if err != nil {
+		return 0, err
+	}
+	elapsed := time.Since(start)
+	_ = conn.Close()
 	return elapsed, nil
 }
