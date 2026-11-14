@@ -1641,16 +1641,18 @@ func MeasureLatencies(ctx context.Context, locations []Location, dialProbe func(
   {
     path: 'core/go.mod',
     language: 'go',
-    title: 'core/go.mod (Зависимости переписанного Go-ядра)',
-    description: 'Минимальный go.mod: только стандартная библиотека Go, golang.org/x/crypto (PBKDF2/HKDF) и golang.org/x/net (HTTP/2).',
+    title: 'core/go.mod (Зависимости переписанного Go-ядра + директива tool gobind)',
+    description: 'Минимальный go.mod: стандартная библиотека Go, golang.org/x/crypto, golang.org/x/net и директива tool golang.org/x/mobile/cmd/gobind для сохранения графа gomobile при go mod tidy.',
     content: `module mozillavpnlite/core
 
-go 1.23
+go 1.24
 
 require (
 	golang.org/x/crypto v0.33.0
 	golang.org/x/net v0.35.0
 )
+
+tool golang.org/x/mobile/cmd/gobind
 `
   },
   {
@@ -2324,8 +2326,8 @@ object Tun2Socks {
   {
     path: 'android/app/build.gradle.kts',
     language: 'gradle',
-    title: 'android/app/build.gradle.kts (Чистая сборка Kotlin + Compose с R8 минификацией)',
-    description: 'Конфигурация сборки нативного Android-приложения с включённым R8/ShrinkResources (~4.5 МБ APK, без Flutter).',
+    title: 'android/app/build.gradle.kts (Чистая сборка Kotlin + Compose + NDK hev-socks5-tunnel)',
+    description: 'Конфигурация сборки нативного Android-приложения с компиляцией C-модуля hev-socks5-tunnel через ndkBuild (~4.5 МБ APK, без Flutter).',
     content: `plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -2337,6 +2339,18 @@ android {
     compileSdk = 35
     ndkVersion = "27.0.12077973"
 
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
+    externalNativeBuild {
+        ndkBuild {
+            path = file("../hev-socks5-tunnel/Android.mk")
+        }
+    }
+
     defaultConfig {
         applicationId = "app.mozillavpnlite"
         minSdk = 24
@@ -2347,12 +2361,20 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
+
+        externalNativeBuild {
+            ndkBuild {
+                targets += "hev-socks5-tunnel"
+                arguments += listOf("REV_ID=2.19.3", "APP_SUPPORT_FLEXIBLE_PAGE_SIZES=true")
+                cFlags += listOf("-O3", "-DPKGNAME=app/mozillavpnlite", "-DCLSNAME=Tun2Socks")
+            }
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
+            isShrinkResources = false
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -2432,11 +2454,10 @@ kotlin.code.style=official
   {
     path: 'android/app/src/main/AndroidManifest.xml',
     language: 'xml',
-    title: 'android/app/src/main/AndroidManifest.xml (Минимальные разрешения)',
-    description: 'Манифест Android-приложения: только INTERNET, ACCESS_NETWORK_STATE, FOREGROUND_SERVICE и BIND_VPN_SERVICE.',
+    title: 'android/app/src/main/AndroidManifest.xml (Минимальные разрешения, AGP 8.7+)',
+    description: 'Манифест Android-приложения (совместим с AGP 8.7+ и Android 14/15 foregroundServiceType="specialUse").',
     content: `<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="app.mozillavpnlite">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -2467,6 +2488,9 @@ kotlin.code.style=official
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="A VPN that carries the device's traffic through an encrypted Mozilla Fastly proxy." />
         </service>
     </application>
 </manifest>
@@ -2476,7 +2500,7 @@ kotlin.code.style=official
     path: '.github/workflows/build-apk.yml',
     language: 'markdown',
     title: '.github/workflows/build-apk.yml (Нативная сборка Kotlin + Compose + Go Core без Flutter)',
-    description: 'Пайплайн GitHub Actions: компилирует переписанное Go-ядро в core.aar и собирает чистый нативный APK через Gradle (~4.5 МБ, без Flutter).',
+    description: 'Пайплайн GitHub Actions: регистрирует tool gobind в go.mod, компилирует переписанное Go-ядро в core.aar и собирает чистый нативный APK через Gradle (~4.5 МБ, без Flutter).',
     content: `name: Build Mozilla VPN Lite Android APK (Pure Kotlin + Compose + Rewritten Go Core)
 
 on:
@@ -2498,16 +2522,16 @@ jobs:
       - name: Checkout Mozilla VPN Lite repository
         uses: actions/checkout@v4
 
-      - name: Fetch C Tun2Socks (hev-socks5-tunnel) JNI sources
+      - name: Fetch C Tun2Socks (hev-socks5-tunnel) NDK sources
         run: |
           git clone --depth 1 https://github.com/armanlife/arman-vpn-client.git /tmp/upstream-jni
-          mkdir -p android/app/src/main/cpp
-          cp -r /tmp/upstream-jni/app/android/app/src/main/jni/* android/app/src/main/cpp/ 2>/dev/null || true
+          rm -rf android/hev-socks5-tunnel
+          cp -r /tmp/upstream-jni/app/android/hev-socks5-tunnel android/hev-socks5-tunnel
 
-      - name: Set up Go 1.23
+      - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '>=1.24.0'
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -2517,6 +2541,8 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
 
       - name: Install Android NDK & gomobile
         run: |
@@ -2528,6 +2554,7 @@ jobs:
         run: |
           mkdir -p android/app/libs
           cd core
+          go get -tool "golang.org/x/mobile/cmd/gobind@\$GOMOBILE_VERSION"
           go get "golang.org/x/mobile/bind@\$GOMOBILE_VERSION"
           go mod tidy
           gomobile bind -target=android -androidapi 24 -trimpath -ldflags "-s -w" \\
@@ -2555,7 +2582,7 @@ jobs:
           gh release delete "\$tag" --yes --cleanup-tag 2>/dev/null || true
           gh release create "\$tag" out/*.apk \\
             --title "Mozilla VPN Lite (Pure Native Kotlin + Rewritten Go Core)" \\
-            --notes "Чистая нативная сборка Kotlin + Jetpack Compose (~4.5 МБ, без Flutter) с переписанным и оптимизированным Go-ядром (sync.Pool 32KB, TCP_NODELAY, Pre-warm 2-го аккаунта и авто-реконнект Wi-Fi <-> LTE)."
+            --notes "Чистая нативная сборка Kotlin + Jetpack Compose (без Flutter) с переписанным и оптимизированным Go-ядром (sync.Pool 32KB, TCP_NODELAY, Pre-warm 2-го аккаунта и авто-реконнект Wi-Fi <-> LTE)."
 `
   }
 ];

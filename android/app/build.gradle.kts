@@ -9,6 +9,18 @@ android {
     compileSdk = 35
     ndkVersion = "27.0.12077973"
 
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
+    externalNativeBuild {
+        ndkBuild {
+            path = file("../hev-socks5-tunnel/Android.mk")
+        }
+    }
+
     defaultConfig {
         applicationId = "app.mozillavpnlite"
         minSdk = 24
@@ -19,12 +31,20 @@ android {
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
+
+        externalNativeBuild {
+            ndkBuild {
+                targets += "hev-socks5-tunnel"
+                arguments += listOf("REV_ID=2.19.3", "APP_SUPPORT_FLEXIBLE_PAGE_SIZES=true")
+                cFlags += listOf("-O3", "-DPKGNAME=app/mozillavpnlite", "-DCLSNAME=Tun2Socks")
+            }
+        }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
+            isShrinkResources = false
             signingConfig = signingConfigs.getByName("debug")
         }
     }
