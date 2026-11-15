@@ -112,6 +112,8 @@ type Engine struct {
 	diag           []diagEvent
 	authMu         sync.Mutex
 	lastAuthFail   time.Time
+	rejectMu       sync.Mutex
+	lastReject     map[string]time.Time
 	OnTrafficBytes func(deltaBytes int64)
 	OnQuotaHeaders func(h http.Header)
 	OnQuotaExhaust func()
@@ -306,11 +308,13 @@ func (e *Engine) LogEvent(format string, args ...any) {
 // while the device sleeps). The callback (mobile) fetches a fresh
 // pass and hot-swaps it. Debounced: a burst of streams all meet the
 // same dead token within the same second, and one refresh fixes all.
-func (e *Engine) noteAuthFailure() {
+// Returns true when this call actually fired the callback, i.e. a
+// refresh is now in flight.
+func (e *Engine) noteAuthFailure() bool {
 	e.authMu.Lock()
 	if time.Since(e.lastAuthFail) < 10*time.Second {
 		e.authMu.Unlock()
-		return
+		return false
 	}
 	e.lastAuthFail = time.Now()
 	cb := e.OnAuthFailure
@@ -318,6 +322,60 @@ func (e *Engine) noteAuthFailure() {
 	if cb != nil {
 		go cb()
 	}
+	return cb != nil
+}
+
+// rejectionError is an HTTP-level refusal from the proxy (a non-2xx
+// CONNECT response): an authoritative answer, not a transport
+// failure — the session that carried it is healthy and stays pooled.
+type rejectionError struct {
+	target string
+	status int
+	body   string
+}
+
+func (e *rejectionError) Error() string {
+	if e.body != "" {
+		return fmt.Sprintf("CONNECT %s rejected HTTP %d: %s", e.target, e.status, e.body)
+	}
+	return fmt.Sprintf("CONNECT %s rejected HTTP %d", e.target, e.status)
+}
+
+// shouldLogReject rate-limits rejection log lines: apps retry refused
+// ports (FCM 5228, MTProto 5222) in lockstep, and three identical
+// lines per attempt bury the journal. One line per target+status per
+// minute keeps the fact without the flood.
+func (e *Engine) shouldLogReject(target string, status int) bool {
+	key := target + "|" + strconv.Itoa(status)
+	e.rejectMu.Lock()
+	defer e.rejectMu.Unlock()
+	if e.lastReject == nil {
+		e.lastReject = make(map[string]time.Time)
+	}
+	if time.Since(e.lastReject[key]) < time.Minute {
+		return false
+	}
+	e.lastReject[key] = time.Now()
+	return true
+}
+
+// waitTokenChange blocks until the engine's bearer token is replaced
+// (a refresh landing after a 401) or the timeout passes.
+func (e *Engine) waitTokenChange(timeout time.Duration) bool {
+	e.mu.RLock()
+	before := e.bearerToken
+	e.mu.RUnlock()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		e.mu.RLock()
+		now := e.bearerToken
+		e.mu.RUnlock()
+		if now != before {
+			return true
+		}
+	}
+	return false
 }
 
 // DiagLog returns the diagnostic log, oldest first, each entry prefixed
@@ -1091,8 +1149,9 @@ func (e *Engine) openH2ConnectStreamCC(ctx context.Context, targetAuthority stri
 	// holding several corpses is cleared attempt by attempt instead of
 	// by one pool-wide flush that also kills healthy streams.
 	var lastErr error
+	waitedAuth := false
 	for attempt := 0; attempt < 3; attempt++ {
-		rc, wc, cc, err := e.openH2ConnectStreamOnce(ctx, targetAuthority)
+		rc, wc, cc, authFired, err := e.openH2ConnectStreamOnce(ctx, targetAuthority)
 		if err == nil {
 			return rc, wc, cc, nil
 		}
@@ -1102,12 +1161,24 @@ func (e *Engine) openH2ConnectStreamCC(ctx context.Context, targetAuthority stri
 			// itself is healthy and the caller must see it as-is.
 			return nil, nil, nil, err
 		}
+		var rejErr *rejectionError
+		if authFired && !waitedAuth && errors.As(err, &rejErr) && rejErr.status == http.StatusUnauthorized {
+			// The held token is dead and a refresh is in flight: wait
+			// for it to land and retry on the fresh token instead of
+			// failing the stream. Without this, the first page load
+			// after every wake died even though recovery took ~2 s —
+			// the app saw a reset and fell back to its offline page.
+			waitedAuth = true
+			if e.waitTokenChange(3 * time.Second) {
+				continue
+			}
+		}
 		lastErr = err
 	}
 	return nil, nil, nil, lastErr
 }
 
-func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, *http2.ClientConn, error) {
+func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, *http2.ClientConn, bool, error) {
 	// Time-box only session establishment (TCP dial + TLS handshake).
 	// The request itself keeps the caller's context: cancelling it would
 	// tear down the live stream.
@@ -1115,7 +1186,7 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 	cc, token, err := e.ensureH2Session(dialCtx)
 	dialCancel()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, false, err
 	}
 
 	pr, pw := io.Pipe()
@@ -1161,7 +1232,7 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 				e.ResetSession()
 			}
 		}
-		return nil, nil, nil, err
+		return nil, nil, nil, false, err
 	}
 
 	if e.OnQuotaHeaders != nil && resp.Header != nil {
@@ -1172,19 +1243,23 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		e.logDiag("connect %s rejected HTTP %d", targetAuthority, resp.StatusCode)
+		if e.shouldLogReject(targetAuthority, resp.StatusCode) {
+			e.logDiag("connect %s rejected HTTP %d", targetAuthority, resp.StatusCode)
+		}
+		authFired := false
 		if resp.StatusCode == http.StatusUnauthorized {
-			e.noteAuthFailure()
+			authFired = e.noteAuthFailure()
 		}
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
 		_ = resp.Body.Close()
 		_ = pw.Close()
-		if len(snippet) > 0 {
-			return nil, nil, nil, fmt.Errorf("CONNECT %s rejected HTTP %d: %s", targetAuthority, resp.StatusCode, snippet)
+		return nil, nil, nil, authFired, &rejectionError{
+			target: targetAuthority,
+			status: resp.StatusCode,
+			body:   string(snippet),
 		}
-		return nil, nil, nil, fmt.Errorf("CONNECT %s rejected HTTP %d", targetAuthority, resp.StatusCode)
 	}
-	return resp.Body, pw, cc, nil
+	return resp.Body, pw, cc, false, nil
 }
 
 // ProbeLatency measures the latency to a Fastly proxy node as the total time

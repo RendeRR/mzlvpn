@@ -38,6 +38,15 @@ var (
 	pendingEmail      string
 	pendingSessionHex string
 	pendingVerifyMode string // "email-2fa" or "totp-2fa"
+
+	// diagOffsetMin mirrors the value last passed to SetUTCOffset, so
+	// log lines built here (token expiry) use the same wall clock as
+	// the tunnel's own diagnostic timestamps.
+	diagOffsetMin int
+
+	// tokenLoopStop closes the proactive pass-refresh loop; nil when
+	// the loop is not running. Guarded by mu.
+	tokenLoopStop chan struct{}
 )
 
 type ActionResult struct {
@@ -61,6 +70,7 @@ func SetLanguage(code string) {
 // minutes, so tunnel-log timestamps render in the user's wall-clock
 // time instead of the Go process's UTC. Safe to call at any time.
 func SetUTCOffset(minutes int) {
+	diagOffsetMin = minutes
 	tunnel.SetDiagZone(minutes)
 }
 
@@ -167,8 +177,58 @@ func refreshEngineToken(reason string) {
 		if now := p.ActiveAccount(); now != nil {
 			email = now.Email
 		}
-		engine.LogEvent("token updated (%s, %s, exp %s)", reason, email, pass.ExpiresAt.Format("15:04"))
+		expLocal := pass.ExpiresAt.In(time.FixedZone("", diagOffsetMin*60))
+		engine.LogEvent("token updated (%s, %s, exp %s)", reason, email, expLocal.Format("15:04"))
 	}
+}
+
+// startTokenRefreshLoop keeps the held ProxyPass from ever reaching
+// its expiry while connected: passes live only ~10 minutes (measured
+// in the field, 2026-11-15), so without this every long session —
+// and every wake after a >10-minute sleep — met a dead token. The
+// loop checks once a minute and refreshes when under 3 minutes
+// remain. It cannot run while the device sleeps (the process is
+// frozen with everything else); the wake gap is covered by the
+// reconnect refresh and the tunnel's wait-and-retry on 401.
+func startTokenRefreshLoop() {
+	mu.Lock()
+	if tokenLoopStop != nil {
+		close(tokenLoopStop)
+	}
+	stop := make(chan struct{})
+	tokenLoopStop = stop
+	mu.Unlock()
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+			}
+			mu.Lock()
+			p := pool
+			isConn := connected
+			mu.Unlock()
+			if !isConn || p == nil {
+				return
+			}
+			if active := p.ActiveAccount(); active != nil && active.LastPass != nil &&
+				time.Until(active.LastPass.ExpiresAt) < 3*time.Minute {
+				refreshEngineToken("expiry")
+			}
+		}
+	}()
+}
+
+func stopTokenRefreshLoop() {
+	mu.Lock()
+	if tokenLoopStop != nil {
+		close(tokenLoopStop)
+		tokenLoopStop = nil
+	}
+	mu.Unlock()
 }
 
 func rotateActiveAccount(p *accounts.Pool) {
@@ -222,6 +282,7 @@ func Connect() error {
 		engine.LogEvent("connected (warm pass, %s)", active.Email)
 		go probeTunnel()
 		go refreshEngineToken("connect")
+		startTokenRefreshLoop()
 		return nil
 	}
 
@@ -243,6 +304,7 @@ func Connect() error {
 	mu.Unlock()
 	engine.LogEvent("connected (fresh pass, %s)", active.Email)
 	go probeTunnel()
+	startTokenRefreshLoop()
 	return nil
 }
 
@@ -279,6 +341,7 @@ func Reconnect() {
 // Disconnect stops the local SOCKS5 tunnel.
 func Disconnect() {
 	engine.LogEvent("disconnect")
+	stopTokenRefreshLoop()
 	engine.Stop()
 	mu.Lock()
 	connected = false
