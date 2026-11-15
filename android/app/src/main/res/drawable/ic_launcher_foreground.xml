@@ -1,42 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Дизайн «Прибор»: рубильник на заводском шильдике.
-     Рамка-табличка, направляющие рубильника, оранжевая зона слева,
-     чёрный ползун справа, оранжевая «заклёпка» в углу. -->
+<!-- Дизайн «Прибор»: бумажный шильдик как отдельный объект на
+     прозрачном фоне — рамка-табличка, рубильник (оранжевая зона слева,
+     чёрный ползун справа), оранжевая «заклёпка» в углу. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Рамка шильдика -->
+    <!-- Табличка: бумага с чёрной окантовкой -->
     <path
-        android:fillColor="#00000000"
+        android:fillColor="#F4F1EA"
         android:strokeColor="#17130C"
-        android:strokeWidth="2.5"
-        android:pathData="M27,27h54v54h-54z" />
+        android:strokeWidth="3"
+        android:pathData="M23,23h62v62h-62z" />
     <!-- Направляющие рубильника: торцевые упоры -->
     <path
         android:fillColor="#17130C"
-        android:pathData="M33,45h3.5v18H33z" />
+        android:pathData="M31,44h3.5v20H31z" />
     <path
         android:fillColor="#17130C"
-        android:pathData="M71.5,45H75v18h-3.5z" />
+        android:pathData="M73.5,44H77v20h-3.5z" />
     <!-- Направляющие: верхняя и нижняя шины -->
     <path
         android:fillColor="#17130C"
-        android:pathData="M33,45h42v2.5H33z" />
+        android:pathData="M31,44h46v2.5H31z" />
     <path
         android:fillColor="#17130C"
-        android:pathData="M33,60.5h42V63H33z" />
+        android:pathData="M31,61.5h46V64H31z" />
     <!-- Оранжевая зона ВКЛ -->
     <path
         android:fillColor="#FF4D00"
-        android:pathData="M36.5,47.5H54v13H36.5z" />
+        android:pathData="M34.5,46.5H53v15H34.5z" />
     <!-- Ползун -->
     <path
         android:fillColor="#17130C"
-        android:pathData="M52,46h18v16H52z" />
+        android:pathData="M51,45h18v18H51z" />
     <!-- Заклёпка -->
     <path
         android:fillColor="#FF4D00"
-        android:pathData="M73,73h6v6h-6z" />
+        android:pathData="M71,71h6v6h-6z" />
 </vector>
