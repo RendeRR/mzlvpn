@@ -17,11 +17,20 @@
         android:gravity="center_vertical"
         android:orientation="horizontal">
 
-        <View
+        <!-- The status square is a TextView glyph, NOT a bare View
+             with a drawable background: the bare-View version made
+             launcher hosts fail the whole widget with "Can't load
+             widget" (bisected 2026-11-15 — the zero-resource
+             diagnostic layout rendered, this element was the prime
+             structural difference). The color is (re)set from
+             VpnWidgetProvider via setTextColor. -->
+        <TextView
             android:id="@+id/widget_square"
-            android:layout_width="10dp"
-            android:layout_height="10dp"
-            android:background="@drawable/widget_square_ink" />
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="■"
+            android:textColor="@color/pribor_ink"
+            android:textSize="11sp" />
 
         <TextView
             android:layout_width="wrap_content"
