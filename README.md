@@ -8,9 +8,9 @@
 
 <table>
   <tr>
-    <td align="center"><img src="docs/screenshots/home.png" width="260" alt="Главный экран: подключено, рубильник в положении ВКЛ"></td>
-    <td align="center"><img src="docs/screenshots/accounts.png" width="260" alt="Аккаунты: квоты, ротация, кнопка «В работу»"></td>
-    <td align="center"><img src="docs/screenshots/locations.png" width="260" alt="Локации: список стран по пингу"></td>
+    <td align="center"><img src="docs/screenshots/%D0%93%D0%BB%D0%B0%D0%B2%D0%BD%D1%8B%D0%B9%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD.png" width="260" alt="Главный экран: подключено, рубильник в положении ВКЛ"></td>
+    <td align="center"><img src="docs/screenshots/%D0%90%D0%BA%D0%BA%D0%B0%D1%83%D0%BD%D1%82%D1%8B.png" width="260" alt="Аккаунты: квоты, ротация, кнопка «В работу»"></td>
+    <td align="center"><img src="docs/screenshots/%D0%9B%D0%BE%D0%BA%D0%B0%D1%86%D0%B8%D0%B8.png" width="260" alt="Локации: список стран по пингу"></td>
   </tr>
   <tr>
     <td align="center">Пульт</td>
