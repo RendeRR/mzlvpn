@@ -33,6 +33,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -158,6 +159,9 @@ class MainActivity : ComponentActivity() {
 fun MozillaVpnLiteApp() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    // Hoisted for use inside non-composable lambdas below.
+    val msgAddAccountFirst = stringResource(R.string.add_account_first)
+    val msgCheckingSession = stringResource(R.string.checking_session)
 
     var snap by remember { mutableStateOf(CoreSnapshot()) }
     var tab by remember { mutableIntStateOf(0) } // 0 = Пульт, 1 = Аккаунты, 2 = Серверы
@@ -224,7 +228,7 @@ fun MozillaVpnLiteApp() {
                 tab = 1
                 showAddForm = true
                 authIsError = true
-                authMessage = "Добавьте аккаунт Mozilla для подключения"
+                authMessage = msgAddAccountFirst
             } else {
                 val prepareIntent = VpnService.prepare(context)
                 if (prepareIntent != null) {
@@ -268,7 +272,7 @@ fun MozillaVpnLiteApp() {
                         .background(if (snap.state == "connected") Signal else Ink)
                 )
                 Text(
-                    text = "MZLVPN · LITE · SER. 001",
+                    text = stringResource(R.string.brand_plate),
                     color = Ink,
                     fontSize = 14.sp,
                     fontFamily = PriborFonts.mono(FontWeight.SemiBold),
@@ -286,7 +290,7 @@ fun MozillaVpnLiteApp() {
                 )
             } else {
                 Text(
-                    text = "ВЫКЛЮЧЕНО",
+                    text = stringResource(R.string.state_off),
                     color = InkSoft,
                     fontSize = 14.sp,
                     fontFamily = PriborFonts.mono(FontWeight.Normal)
@@ -532,19 +536,19 @@ fun MozillaVpnLiteApp() {
         ) {
             BottomNavTabItem(
                 selected = tab == 0,
-                label = "ПУЛЬТ",
+                label = stringResource(R.string.tab_console),
                 onClick = { tab = 0 },
                 modifier = Modifier.weight(1f)
             )
             BottomNavTabItem(
                 selected = tab == 1,
-                label = "АККАУНТЫ · ${snap.accounts.size}",
+                label = stringResource(R.string.tab_accounts, snap.accounts.size),
                 onClick = { tab = 1 },
                 modifier = Modifier.weight(1f)
             )
             BottomNavTabItem(
                 selected = tab == 2,
-                label = "СЕРВЕРЫ · ${snap.locations.size}",
+                label = stringResource(R.string.tab_servers, snap.locations.size),
                 onClick = { tab = 2 },
                 modifier = Modifier.weight(1f)
             )
@@ -562,7 +566,7 @@ fun MozillaVpnLiteApp() {
                 }
                 scope.launch {
                     isSigningIn = true
-                    authMessage = "Проверка сессии Mozilla…"
+                    authMessage = msgCheckingSession
                     authIsError = false
                     val res = CoreBridge.addAccountSessionToken(
                         capturedEmail.ifBlank { emailInput.trim() },
@@ -752,7 +756,7 @@ private fun BreakerSwitch(
             horizontalArrangement = Arrangement.spacedBy(13.dp)
         ) {
             Text(
-                text = "ВЫКЛ",
+                text = stringResource(R.string.breaker_off),
                 color = if (!isOn && !isConnecting) Ink else InkSoft,
                 fontSize = 16.sp,
                 fontFamily = PriborFonts.display,
@@ -804,7 +808,7 @@ private fun BreakerSwitch(
             }
 
             Text(
-                text = "ВКЛ",
+                text = stringResource(R.string.breaker_on),
                 color = if (isOn) Ink else InkSoft,
                 fontSize = 16.sp,
                 fontFamily = PriborFonts.display,
@@ -1236,9 +1240,9 @@ private fun AccountPlateHeader(acc: AccountItem, isActive: Boolean) {
         )
         Text(
             text = when {
-                isActive -> "АКТИВЕН"
-                acc.exhausted -> "КВОТА ИСЧЕРПАНА"
-                else -> "ГОТОВ"
+                isActive -> stringResource(R.string.acc_status_active)
+                acc.exhausted -> stringResource(R.string.acc_status_exhausted)
+                else -> stringResource(R.string.acc_status_ready)
             },
             color = if (isActive) Ink else InkSoft,
             fontSize = 11.sp,
@@ -1275,9 +1279,9 @@ private fun HomeTabScreen(
             Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Text(
                     text = when {
-                        isConnecting -> "ПОДКЛЮЧЕНИЕ"
-                        isConnected -> "ПОДКЛЮЧЕНО"
-                        else -> "ВЫКЛЮЧЕНО"
+                        isConnecting -> stringResource(R.string.state_connecting)
+                        isConnected -> stringResource(R.string.state_connected)
+                        else -> stringResource(R.string.state_off)
                     },
                     color = Ink,
                     fontSize = 38.sp,
@@ -1302,9 +1306,9 @@ private fun HomeTabScreen(
                     )
                     Text(
                         text = when {
-                            isConnecting -> "УСТАНОВКА СОЕДИНЕНИЯ…"
-                            isConnected -> "ТУННЕЛЬ АКТИВЕН"
-                            else -> "ТУННЕЛЬ НЕАКТИВЕН"
+                            isConnecting -> stringResource(R.string.tunnel_connecting)
+                            isConnected -> stringResource(R.string.tunnel_active)
+                            else -> stringResource(R.string.tunnel_inactive)
                         },
                         color = InkSoft,
                         fontSize = 12.sp,
@@ -1316,11 +1320,11 @@ private fun HomeTabScreen(
 
                 if (activeLocation != null) {
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                        SpecRow("ЛОКАЦИЯ", "${activeLocation.name.uppercase()} · ${activeLocation.code}")
-                        SpecRow("СЕРВЕР", "${activeLocation.host}:${activeLocation.port}")
-                        SpecRow("ПИНГ", CoreBridge.formatPing(activeLocation.latencyMs))
+                        SpecRow(stringResource(R.string.spec_location), "${activeLocation.name.uppercase()} · ${activeLocation.code}")
+                        SpecRow(stringResource(R.string.spec_server), "${activeLocation.host}:${activeLocation.port}")
+                        SpecRow(stringResource(R.string.spec_ping), CoreBridge.formatPing(activeLocation.latencyMs))
                         SpecRow(
-                            "ПРОТОКОЛ",
+                            stringResource(R.string.spec_protocol),
                             if (snap.protocol == "h3") "HTTP/3 MASQUE" else "HTTP/2 CONNECT"
                         )
                     }
@@ -1346,7 +1350,7 @@ private fun HomeTabScreen(
         if (snap.accounts.isNotEmpty()) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionLabel("АККАУНТЫ · ${snap.accounts.size}")
+                    SectionLabel(stringResource(R.string.home_accounts, snap.accounts.size))
                     snap.accounts.forEachIndexed { idx, acc ->
                         val isActive = idx == snap.activeAccount
                         val pct = ((acc.usedBytes.toDouble() / acc.limitBytes.coerceAtLeast(1L).toDouble()) * 100.0)
@@ -1375,13 +1379,13 @@ private fun HomeTabScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "ИЗРАСХОДОВАНО: ${CoreBridge.formatBytes(acc.usedBytes)} ИЗ ${CoreBridge.formatBytes(acc.limitBytes)}",
+                                    text = stringResource(R.string.quota_used_line, CoreBridge.formatBytes(acc.usedBytes), CoreBridge.formatBytes(acc.limitBytes)),
                                     color = InkSoft,
                                     fontSize = 11.sp,
                                     fontFamily = PriborFonts.mono(FontWeight.Normal)
                                 )
                                 Text(
-                                    text = "$pct% · ПОРОГ ${snap.thresholdPct}%",
+                                    text = stringResource(R.string.quota_threshold_line, pct, snap.thresholdPct),
                                     color = InkSoft,
                                     fontSize = 11.sp,
                                     fontFamily = PriborFonts.mono(FontWeight.Normal)
@@ -1396,16 +1400,16 @@ private fun HomeTabScreen(
         // 3. Быстрые локации — строки табло.
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SectionLabel("ЛОКАЦИИ · БЫСТРЫЕ")
+                SectionLabel(stringResource(R.string.home_locations_fast))
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .border(BorderStroke(1.dp, Ink), RectangleShape)
                 ) {
                     LocationRow(
-                        code = "АВТО",
-                        title = "Быстрейший",
-                        subtitle = "Авто пинг",
+                        code = stringResource(R.string.auto_row_code),
+                        title = stringResource(R.string.fastest_title),
+                        subtitle = stringResource(R.string.fastest_subtitle),
                         pingText = "",
                         selected = snap.selectedLocation == "fastest",
                         onClick = { onSelectLocation("fastest") }
@@ -1487,18 +1491,18 @@ private fun AccountsTabScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "АККАУНТЫ",
+                        text = stringResource(R.string.accounts_title),
                         color = Ink,
                         fontSize = 30.sp,
                         fontFamily = PriborFonts.display
                     )
                     SmallPlateButton(
-                        text = if (showAddForm) "ЗАКРЫТЬ" else "+ ДОБАВИТЬ",
+                        text = if (showAddForm) stringResource(R.string.btn_close) else stringResource(R.string.btn_add),
                         onClick = onToggleAddForm
                     )
                 }
                 Text(
-                    text = "ПРОФИЛИ MOZILLA · ${snap.accounts.size} · ЛИМИТ АКТИВНОГО ${snap.accounts.getOrNull(snap.activeAccount)?.let { CoreBridge.formatBytes(it.limitBytes) } ?: "—"} · АВТО-СМЕНА ПО ОЧЕРЕДИ",
+                    text = stringResource(R.string.accounts_subline, snap.accounts.size, snap.accounts.getOrNull(snap.activeAccount)?.let { CoreBridge.formatBytes(it.limitBytes) } ?: "—"),
                     color = InkSoft,
                     fontSize = 11.sp,
                     fontFamily = PriborFonts.mono(FontWeight.Normal),
@@ -1549,7 +1553,7 @@ private fun AccountsTabScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Text(
-                        text = "ДОБАВЛЕНИЕ АККАУНТА FIREFOX (MOZILLA VPN)",
+                        text = stringResource(R.string.add_form_title),
                         color = Ink,
                         fontSize = 13.sp,
                         fontFamily = PriborFonts.mono(FontWeight.SemiBold),
@@ -1560,9 +1564,9 @@ private fun AccountsTabScreen(
                     if (authStepState == "verify_email" || authStepState == "verify_totp") {
                         Text(
                             text = if (authStepState == "verify_totp")
-                                "Введите 6-значный код двухфакторной аутентификации (2FA TOTP):"
+                                stringResource(R.string.verify_totp_prompt)
                             else
-                                "Введите 6-значный код подтверждения входа из письма от Mozilla:",
+                                stringResource(R.string.verify_email_prompt),
                             color = Ink,
                             fontSize = 13.sp,
                             fontFamily = PriborFonts.mono(FontWeight.Normal),
@@ -1570,7 +1574,7 @@ private fun AccountsTabScreen(
                         )
 
                         CodeCells(
-                            label = "КОД · 6 ЦИФР",
+                            label = stringResource(R.string.code_label_6),
                             value = verifyCodeInput,
                             length = 6,
                             digitsOnly = true,
@@ -1582,12 +1586,12 @@ private fun AccountsTabScreen(
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             GhostButton(
-                                text = "НАЗАД",
+                                text = stringResource(R.string.btn_back),
                                 onClick = onCancelVerifyStep,
                                 modifier = Modifier.weight(1f)
                             )
                             PlateButton(
-                                text = "ПОДТВЕРДИТЬ КОД",
+                                text = stringResource(R.string.btn_confirm_code),
                                 onClick = onSubmitVerifyCode,
                                 enabled = !isSigningIn,
                                 busy = isSigningIn,
@@ -1596,7 +1600,11 @@ private fun AccountsTabScreen(
                         }
                     } else {
                         SegmentedBreaker(
-                            options = listOf("Прямой вход", "Браузер", "Токен"),
+                            options = listOf(
+                                stringResource(R.string.method_password),
+                                stringResource(R.string.method_browser),
+                                stringResource(R.string.method_token)
+                            ),
                             selectedIndex = authMethod,
                             onSelect = onAuthMethodChange
                         )
@@ -1604,7 +1612,7 @@ private fun AccountsTabScreen(
                         when (authMethod) {
                             0 -> {
                                 FormField(
-                                    label = "EMAIL АККАУНТА MOZILLA",
+                                    label = stringResource(R.string.field_email),
                                     value = emailInput,
                                     onValueChange = onEmailChange,
                                     keyboardOptions = KeyboardOptions(
@@ -1614,7 +1622,7 @@ private fun AccountsTabScreen(
                                 )
 
                                 FormField(
-                                    label = "ПАРОЛЬ АККАУНТА",
+                                    label = stringResource(R.string.field_password),
                                     value = passwordInput,
                                     onValueChange = onPasswordChange,
                                     keyboardOptions = KeyboardOptions(
@@ -1626,13 +1634,13 @@ private fun AccountsTabScreen(
                                     } else {
                                         PasswordVisualTransformation()
                                     },
-                                    trailingText = if (showPassword) "СКРЫТЬ" else "ПОКАЗАТЬ",
+                                    trailingText = if (showPassword) stringResource(R.string.btn_hide) else stringResource(R.string.btn_show),
                                     onTrailingClick = onToggleShowPassword
                                 )
 
                                 if (authStepState == "unblock_code") {
                                     CodeCells(
-                                        label = "КОД РАЗБЛОКИРОВКИ ИЗ ПИСЬМА · 8 СИМВОЛОВ",
+                                        label = stringResource(R.string.unblock_label),
                                         value = unblockCodeInput,
                                         length = 8,
                                         digitsOnly = false,
@@ -1641,7 +1649,7 @@ private fun AccountsTabScreen(
                                 }
 
                                 PlateButton(
-                                    text = if (isSigningIn) "ВХОД В АККАУНТ MOZILLA…" else "СОХРАНИТЬ И ПОЛУЧИТЬ PROXYPASS",
+                                    text = if (isSigningIn) stringResource(R.string.btn_signing_in) else stringResource(R.string.btn_save_proxypass),
                                     onClick = onSubmitPasswordLogin,
                                     enabled = !isSigningIn && emailInput.isNotBlank() && passwordInput.isNotEmpty(),
                                     busy = isSigningIn,
@@ -1651,7 +1659,7 @@ private fun AccountsTabScreen(
 
                             1 -> {
                                 Text(
-                                    text = "Откроется окно входа accounts.firefox.com. После ввода пароля приложение перехватит токен и предложит ввести 6-значный код из письма Mozilla.",
+                                    text = stringResource(R.string.webview_hint),
                                     color = InkSoft,
                                     fontSize = 13.sp,
                                     fontFamily = PriborFonts.mono(FontWeight.Normal),
@@ -1659,7 +1667,7 @@ private fun AccountsTabScreen(
                                 )
 
                                 PlateButton(
-                                    text = "ОТКРЫТЬ ВХОД MOZILLA (WEBVIEW)",
+                                    text = stringResource(R.string.btn_open_webview),
                                     onClick = onOpenBrowserSignIn,
                                     enabled = !isSigningIn,
                                     modifier = Modifier.fillMaxWidth()
@@ -1668,7 +1676,7 @@ private fun AccountsTabScreen(
 
                             2 -> {
                                 FormField(
-                                    label = "EMAIL АККАУНТА (НЕОБЯЗАТЕЛЬНО)",
+                                    label = stringResource(R.string.field_email_optional),
                                     value = emailInput,
                                     onValueChange = onEmailChange,
                                     keyboardOptions = KeyboardOptions(
@@ -1678,14 +1686,14 @@ private fun AccountsTabScreen(
                                 )
 
                                 FormField(
-                                    label = "64-HEX SESSIONTOKEN ИЗ WEBCHANNEL",
+                                    label = stringResource(R.string.field_session_token),
                                     value = sessionTokenInput,
                                     onValueChange = onSessionTokenChange,
                                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
                                 )
 
                                 PlateButton(
-                                    text = "СОХРАНИТЬ И ПОЛУЧИТЬ PROXYPASS",
+                                    text = stringResource(R.string.btn_save_proxypass),
                                     onClick = onSubmitSessionToken,
                                     enabled = !isSigningIn && sessionTokenInput.trim().length >= 32,
                                     busy = isSigningIn,
@@ -1721,7 +1729,7 @@ private fun AccountsTabScreen(
                         AccountPlateHeader(acc = acc, isActive = isActive)
                     }
                     Text(
-                        text = if (isActive) "АКТИВНЫЙ ПРОФИЛЬ" else if (acc.exhausted) "В РЕЗЕРВЕ ДО СБРОСА" else "В ОЧЕРЕДИ РОТАЦИИ",
+                        text = if (isActive) stringResource(R.string.acc_profile_active) else if (acc.exhausted) stringResource(R.string.acc_profile_reserve) else stringResource(R.string.acc_profile_queue),
                         color = InkSoft,
                         fontSize = 11.sp,
                         fontFamily = PriborFonts.mono(FontWeight.Normal),
@@ -1792,7 +1800,7 @@ private fun AccountsTabScreen(
                                     .padding(horizontal = 11.dp, vertical = 6.dp)
                             ) {
                                 Text(
-                                    text = "В РАБОТУ",
+                                    text = stringResource(R.string.btn_to_work),
                                     color = Paper,
                                     fontSize = 11.sp,
                                     fontFamily = PriborFonts.mono(FontWeight.SemiBold),
@@ -1808,7 +1816,7 @@ private fun AccountsTabScreen(
                                 .padding(horizontal = 11.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = if (acc.enabled) "В РОТАЦИИ" else "ОТКЛЮЧЁН",
+                                text = if (acc.enabled) stringResource(R.string.btn_in_rotation) else stringResource(R.string.btn_acc_off),
                                 color = if (acc.enabled) Paper else InkSoft,
                                 fontSize = 11.sp,
                                 fontFamily = PriborFonts.mono(FontWeight.SemiBold),
@@ -1818,7 +1826,7 @@ private fun AccountsTabScreen(
                     }
 
                     Text(
-                        text = "УДАЛИТЬ",
+                        text = stringResource(R.string.btn_delete),
                         color = Alarm,
                         fontSize = 12.sp,
                         fontFamily = PriborFonts.mono(FontWeight.SemiBold),
@@ -1847,7 +1855,7 @@ private fun AccountsTabScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "ПОРОГ АВТО-ПЕРЕКЛЮЧЕНИЯ АККАУНТА",
+                        text = stringResource(R.string.threshold_title),
                         color = Ink,
                         fontSize = 12.sp,
                         fontFamily = PriborFonts.mono(FontWeight.SemiBold),
@@ -1855,7 +1863,7 @@ private fun AccountsTabScreen(
                         modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = "${snap.thresholdPct}% КВОТЫ",
+                        text = stringResource(R.string.threshold_value, snap.thresholdPct),
                         color = Ink,
                         fontSize = 13.sp,
                         fontFamily = PriborFonts.mono(FontWeight.SemiBold),
@@ -1876,7 +1884,7 @@ private fun AccountsTabScreen(
                 )
 
                 Text(
-                    text = "При достижении ${snap.thresholdPct}% квоты активного аккаунта${snap.accounts.getOrNull(snap.activeAccount)?.let { " (${CoreBridge.formatBytes(it.limitBytes)})" } ?: ""} ядро автоматически запрашивает ProxyPass следующего аккаунта в списке.",
+                    text = stringResource(R.string.threshold_hint, snap.thresholdPct, snap.accounts.getOrNull(snap.activeAccount)?.let { " (${CoreBridge.formatBytes(it.limitBytes)})" } ?: ""),
                     color = InkSoft,
                     fontSize = 12.sp,
                     fontFamily = PriborFonts.mono(FontWeight.Normal),
@@ -1929,13 +1937,13 @@ private fun ServersTabScreen(
                 verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Text(
-                    text = "ЛОКАЦИИ",
+                    text = stringResource(R.string.servers_title),
                     color = Ink,
                     fontSize = 30.sp,
                     fontFamily = PriborFonts.display
                 )
                 Text(
-                    text = "ЛОКАЦИИ MOZILLA · ${snap.locations.size} · ИСТОЧНИК: REMOTE SETTINGS · VPN-SERVERLIST",
+                    text = stringResource(R.string.servers_subline, snap.locations.size),
                     color = InkSoft,
                     fontSize = 11.sp,
                     fontFamily = PriborFonts.mono(FontWeight.Normal),
@@ -1946,7 +1954,7 @@ private fun ServersTabScreen(
             Spacer(modifier = Modifier.width(10.dp))
 
             SmallPlateButton(
-                text = if (isPinging) "ПИНГ…" else "↻ ПИНГ",
+                text = if (isPinging) stringResource(R.string.btn_pinging) else stringResource(R.string.btn_ping),
                 onClick = onPingAll,
                 enabled = !isPinging,
                 busy = isPinging
@@ -1954,10 +1962,10 @@ private fun ServersTabScreen(
         }
 
         FormField(
-            label = "ПОИСК",
+            label = stringResource(R.string.search_label),
             value = searchQuery,
             onValueChange = onSearchChange,
-            placeholder = "Страна, город или Fastly-узел…",
+            placeholder = stringResource(R.string.search_hint),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
         )
 
@@ -1970,15 +1978,15 @@ private fun ServersTabScreen(
             val isFastest = snap.selectedLocation == "fastest"
 
             ModePlate(
-                title = "РЕКОМЕНДУЕМЫЙ",
+                title = stringResource(R.string.mode_recommended),
                 subtitle = "Anycast (REC)",
                 selected = isRecommended,
                 onClick = { onSelectLocation("recommended") },
                 modifier = Modifier.weight(1f)
             )
             ModePlate(
-                title = "БЫСТРЕЙШИЙ",
-                subtitle = "Мин. задержка",
+                title = stringResource(R.string.mode_fastest),
+                subtitle = stringResource(R.string.mode_fastest_sub),
                 selected = isFastest,
                 onClick = { onSelectLocation("fastest") },
                 modifier = Modifier.weight(1f)
@@ -2103,7 +2111,7 @@ private fun FxaWebViewDialog(
             ) {
                 Column {
                     Text(
-                        text = "ВХОД В АККАУНТ MOZILLA",
+                        text = stringResource(R.string.webview_title),
                         color = Ink,
                         fontSize = 14.sp,
                         fontFamily = PriborFonts.mono(FontWeight.SemiBold),
@@ -2118,7 +2126,7 @@ private fun FxaWebViewDialog(
                 }
 
                 Text(
-                    text = "ЗАКРЫТЬ",
+                    text = stringResource(R.string.btn_close),
                     color = Ink,
                     fontSize = 13.sp,
                     fontFamily = PriborFonts.mono(FontWeight.SemiBold),

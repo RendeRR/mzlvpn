@@ -47,11 +47,30 @@ data class CoreSnapshot(
 object CoreBridge {
     private const val FIVE_GB_BYTES = 5368709120L
 
+    @Volatile
+    private var appCtx: Context? = null
+
+    /** Localized string from resources; falls back to the key name before init. */
+    fun str(resId: Int, vararg args: Any): String {
+        val ctx = appCtx ?: return "…"
+        return if (args.isEmpty()) ctx.getString(resId) else ctx.getString(resId, *args)
+    }
+
+    /** Current UI language code ("ru", "en", …) from the app configuration. */
+    fun languageCode(): String {
+        val ctx = appCtx ?: return "en"
+        return ctx.resources.configuration.locales[0]?.language ?: "en"
+    }
+
     fun init(context: Context) {
-        val appCtx = context.applicationContext
+        val appContext = context.applicationContext
+        appCtx = appContext
         Thread {
             try {
-                MinimalVpnService.startCore(appCtx, on = false)
+                mobile.Mobile.setLanguage(languageCode())
+            } catch (_: Throwable) {}
+            try {
+                MinimalVpnService.startCore(appContext, on = false)
             } catch (_: Throwable) {}
         }.start()
     }
@@ -68,21 +87,21 @@ object CoreBridge {
         val safe = bytes.coerceAtLeast(0L)
         val gb = safe.toDouble() / (1024.0 * 1024.0 * 1024.0)
         if (gb >= 0.1) {
-            return String.format("%.2f ГБ", gb)
+            return str(R.string.unit_gb, gb)
         }
         val mb = safe.toDouble() / (1024.0 * 1024.0)
         if (mb >= 1.0) {
-            return String.format("%.0f МБ", mb)
+            return str(R.string.unit_mb, mb)
         }
         if (safe > 0L) {
             val kb = safe.toDouble() / 1024.0
-            return String.format("%.0f КБ", kb.coerceAtLeast(1.0))
+            return str(R.string.unit_kb, kb.coerceAtLeast(1.0))
         }
-        return "0 МБ"
+        return str(R.string.unit_zero)
     }
 
     fun formatPing(latencyMs: Int): String {
-        return if (latencyMs > 0) "$latencyMs мс" else "…"
+        return if (latencyMs > 0) str(R.string.ping_fmt, latencyMs) else "…"
     }
 
     private fun parseActionOutcome(rawJson: String): ActionOutcome {
@@ -92,14 +111,14 @@ object CoreBridge {
             ActionOutcome(
                 ok = state == "ok",
                 state = state,
-                message = obj.optString("message", "Неизвестный ответ ядра"),
+                message = obj.optString("message", str(R.string.core_unknown_response)),
                 email = obj.optString("email", "")
             )
         } catch (t: Throwable) {
             ActionOutcome(
                 ok = false,
                 state = "error",
-                message = t.message ?: "Ошибка разбора ответа ядра"
+                message = t.message ?: str(R.string.core_parse_error)
             )
         }
     }
@@ -154,13 +173,14 @@ object CoreBridge {
                 val code = o.optString("code", "DE")
                 val nameEn = o.optString("name", code)
                 val nameRu = o.optString("name_ru", "").ifBlank { nameEn }
+                val localizedName = if (languageCode() == "ru") nameRu else nameEn
                 val ping = o.optLong("ping_ms", 0L).toInt().coerceAtLeast(0)
 
                 locations.add(
                     LocationItem(
                         code = code,
                         flag = countryFlag(code),
-                        name = nameRu,
+                        name = localizedName,
                         city = o.optString("city", nameEn),
                         host = o.optString("server_host", "muc139.m1.fastly-masque.net"),
                         port = o.optInt("server_port", 2499),
@@ -237,7 +257,7 @@ object CoreBridge {
             ActionOutcome(
                 ok = false,
                 state = "error",
-                message = t.message ?: "Ошибка входа в аккаунт Mozilla"
+                message = t.message ?: str(R.string.signin_failed)
             )
         }
     }
@@ -250,7 +270,7 @@ object CoreBridge {
             ActionOutcome(
                 ok = false,
                 state = "error",
-                message = t.message ?: "Ошибка проверки 6-значного кода"
+                message = t.message ?: str(R.string.verify_failed)
             )
         }
     }
@@ -266,7 +286,7 @@ object CoreBridge {
             ActionOutcome(
                 ok = false,
                 state = "error",
-                message = t.message ?: "Ошибка добавления по sessionToken"
+                message = t.message ?: str(R.string.token_add_failed)
             )
         }
     }

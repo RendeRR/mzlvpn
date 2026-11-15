@@ -24,6 +24,8 @@ import (
 
 	"golang.org/x/crypto/hkdf"
 	"golang.org/x/crypto/pbkdf2"
+
+	"mozillavpnlite/core/lang"
 )
 
 const (
@@ -46,7 +48,7 @@ const (
 )
 
 var (
-	ErrReauthRequired = errors.New("требуется повторный вход в аккаунт Mozilla")
+	ErrReauthRequired = lang.Bilingual("требуется повторный вход в аккаунт Mozilla", "sign-in to the Mozilla account is required again")
 	fxaHTTPClient     = func() *http.Client {
 		jar, _ := cookiejar.New(nil)
 		return &http.Client{
@@ -111,7 +113,7 @@ func DeriveAuthPW(email, password string) ([]byte, error) {
 func DeriveHawkCredentials(tokenHex, contextName string) (id string, key []byte, err error) {
 	tokenBytes, err := hex.DecodeString(strings.TrimSpace(tokenHex))
 	if err != nil {
-		return "", nil, fmt.Errorf("некорректный hex-токен: %w", err)
+		return "", nil, fmt.Errorf("%s: %w", lang.T("некорректный hex-токен", "invalid hex token"), err)
 	}
 	info := []byte(protocolVersion + contextName)
 	hkdfReader := hkdf.New(sha256.New, tokenBytes, nil, info)
@@ -244,7 +246,7 @@ func loginAttempt(ctx context.Context, stretchEmail, originalEmail, password, ve
 
 	var loginResp LoginResponse
 	if err := json.Unmarshal(data, &loginResp); err != nil || loginResp.SessionToken == "" {
-		return nil, errors.New("пустой sessionToken в ответе FxA")
+		return nil, errors.New(lang.T("пустой sessionToken в ответе FxA", "empty sessionToken in the FxA response"))
 	}
 	return &loginResp, nil
 }
@@ -350,7 +352,7 @@ func VerifySessionTOTP(ctx context.Context, sessionTokenHex, code string) error 
 		Success bool `json:"success"`
 	}
 	if err := json.Unmarshal(data, &res); err != nil || !res.Success {
-		return errors.New("неверный 2FA TOTP код")
+		return errors.New(lang.T("неверный 2FA TOTP код", "invalid 2FA TOTP code"))
 	}
 	return nil
 }
@@ -488,7 +490,7 @@ func ExchangeSessionForOAuth(ctx context.Context, sessionTokenHex string) (*OAut
 		apiErr := &APIError{Status: resp.StatusCode}
 		_ = json.Unmarshal(data, apiErr)
 		if directErr != nil {
-			return nil, fmt.Errorf("%w (прямой fxa-credentials запрос до этого: %v)", apiErr, directErr)
+			return nil, fmt.Errorf("%w (%s: %v)", apiErr, lang.T("прямой fxa-credentials запрос до этого", "direct fxa-credentials request before this"), directErr)
 		}
 		return nil, apiErr
 	}
@@ -497,7 +499,7 @@ func ExchangeSessionForOAuth(ctx context.Context, sessionTokenHex string) (*OAut
 		Code string `json:"code"`
 	}
 	if err := json.Unmarshal(data, &codeResp); err != nil || codeResp.Code == "" {
-		return nil, errors.New("не получен код авторизации OAuth")
+		return nil, errors.New(lang.T("не получен код авторизации OAuth", "no OAuth authorization code received"))
 	}
 
 	tokenBody, _ := json.Marshal(map[string]string{

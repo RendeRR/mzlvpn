@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mozilla VPN</string>
+    <string name="brand_plate">MZLVPN · SER. 001</string>
+
+    <!-- Header / state -->
+    <string name="state_connected">ПОДКЛЮЧЕНО</string>
+    <string name="state_connecting">ПОДКЛЮЧЕНИЕ</string>
+    <string name="state_off">ВЫКЛЮЧЕНО</string>
+    <string name="tunnel_active">ТУННЕЛЬ АКТИВЕН</string>
+    <string name="tunnel_inactive">ТУННЕЛЬ НЕАКТИВЕН</string>
+    <string name="tunnel_connecting">УСТАНОВКА СОЕДИНЕНИЯ…</string>
+    <string name="spec_location">ЛОКАЦИЯ</string>
+    <string name="spec_server">СЕРВЕР</string>
+    <string name="spec_ping">ПИНГ</string>
+    <string name="spec_protocol">ПРОТОКОЛ</string>
+    <string name="breaker_off">ВЫКЛ</string>
+    <string name="breaker_on">ВКЛ</string>
+
+    <!-- Navigation -->
+    <string name="tab_console">ПУЛЬТ</string>
+    <string name="tab_accounts">АККАУНТЫ · %1$d</string>
+    <string name="tab_servers">СЕРВЕРЫ · %1$d</string>
+
+    <!-- Home -->
+    <string name="home_accounts">АККАУНТЫ · %1$d</string>
+    <string name="home_locations_fast">ЛОКАЦИИ · БЫСТРЫЕ</string>
+    <string name="quota_used_line">ИЗРАСХОДОВАНО: %1$s ИЗ %2$s</string>
+    <string name="quota_threshold_line">%1$d%% · ПОРОГ %2$d%%</string>
+    <string name="auto_row_code">АВТО</string>
+    <string name="fastest_title">Быстрейший</string>
+    <string name="fastest_subtitle">Авто пинг</string>
+    <string name="add_account_first">Добавьте аккаунт Mozilla для подключения</string>
+    <string name="checking_session">Проверка сессии Mozilla…</string>
+
+    <!-- Account plates -->
+    <string name="acc_status_active">АКТИВЕН</string>
+    <string name="acc_status_exhausted">КВОТА ИСЧЕРПАНА</string>
+    <string name="acc_status_ready">ГОТОВ</string>
+    <string name="acc_profile_active">АКТИВНЫЙ ПРОФИЛЬ</string>
+    <string name="acc_profile_reserve">В РЕЗЕРВЕ ДО СБРОСА</string>
+    <string name="acc_profile_queue">В ОЧЕРЕДИ РОТАЦИИ</string>
+    <string name="btn_to_work">В РАБОТУ</string>
+    <string name="btn_in_rotation">В РОТАЦИИ</string>
+    <string name="btn_acc_off">ОТКЛЮЧЁН</string>
+    <string name="btn_delete">УДАЛИТЬ</string>
+
+    <!-- Accounts tab -->
+    <string name="accounts_title">АККАУНТЫ</string>
+    <string name="btn_add">+ ДОБАВИТЬ</string>
+    <string name="btn_close">ЗАКРЫТЬ</string>
+    <string name="accounts_subline">ПРОФИЛИ MOZILLA · %1$d · ЛИМИТ АКТИВНОГО %2$s · АВТО-СМЕНА ПО ОЧЕРЕДИ</string>
+    <string name="add_form_title">ДОБАВЛЕНИЕ АККАУНТА FIREFOX (MOZILLA VPN)</string>
+    <string name="verify_totp_prompt">Введите 6-значный код двухфакторной аутентификации (2FA TOTP):</string>
+    <string name="verify_email_prompt">Введите 6-значный код подтверждения входа из письма от Mozilla:</string>
+    <string name="code_label_6">КОД · 6 ЦИФР</string>
+    <string name="btn_back">НАЗАД</string>
+    <string name="btn_confirm_code">ПОДТВЕРДИТЬ КОД</string>
+    <string name="method_password">Прямой вход</string>
+    <string name="method_browser">Браузер</string>
+    <string name="method_token">Токен</string>
+    <string name="field_email">EMAIL АККАУНТА MOZILLA</string>
+    <string name="field_password">ПАРОЛЬ АККАУНТА</string>
+    <string name="btn_show">ПОКАЗАТЬ</string>
+    <string name="btn_hide">СКРЫТЬ</string>
+    <string name="unblock_label">КОД РАЗБЛОКИРОВКИ ИЗ ПИСЬМА · 8 СИМВОЛОВ</string>
+    <string name="btn_signing_in">ВХОД В АККАУНТ MOZILLA…</string>
+    <string name="btn_save_proxypass">СОХРАНИТЬ И ПОЛУЧИТЬ PROXYPASS</string>
+    <string name="webview_hint">Откроется окно входа accounts.firefox.com. После ввода пароля приложение перехватит токен и предложит ввести 6-значный код из письма Mozilla.</string>
+    <string name="btn_open_webview">ОТКРЫТЬ ВХОД MOZILLA (WEBVIEW)</string>
+    <string name="field_email_optional">EMAIL АККАУНТА (НЕОБЯЗАТЕЛЬНО)</string>
+    <string name="field_session_token">64-HEX SESSIONTOKEN ИЗ WEBCHANNEL</string>
+    <string name="threshold_title">ПОРОГ АВТО-ПЕРЕКЛЮЧЕНИЯ АККАУНТА</string>
+    <string name="threshold_value">%1$d%% КВОТЫ</string>
+    <string name="threshold_hint">При достижении %1$d%% квоты активного аккаунта%2$s ядро автоматически запрашивает ProxyPass следующего аккаунта в списке.</string>
+
+    <!-- Servers tab -->
+    <string name="servers_title">ЛОКАЦИИ</string>
+    <string name="servers_subline">ЛОКАЦИИ MOZILLA · %1$d · ИСТОЧНИК: REMOTE SETTINGS · VPN-SERVERLIST</string>
+    <string name="btn_ping">↻ ПИНГ</string>
+    <string name="btn_pinging">ПИНГ…</string>
+    <string name="search_label">ПОИСК</string>
+    <string name="search_hint">Страна, город или Fastly-узел…</string>
+    <string name="mode_recommended">РЕКОМЕНДУЕМЫЙ</string>
+    <string name="mode_fastest">БЫСТРЕЙШИЙ</string>
+    <string name="mode_fastest_sub">Мин. задержка</string>
+
+    <!-- WebView dialog -->
+    <string name="webview_title">ВХОД В АККАУНТ MOZILLA</string>
+
+    <!-- CoreBridge formatting and fallbacks -->
+    <string name="unit_gb">%1$.2f ГБ</string>
+    <string name="unit_mb">%1$.0f МБ</string>
+    <string name="unit_kb">%1$.0f КБ</string>
+    <string name="unit_zero">0 МБ</string>
+    <string name="ping_fmt">%1$d мс</string>
+    <string name="core_unknown_response">Неизвестный ответ ядра</string>
+    <string name="core_parse_error">Ошибка разбора ответа ядра</string>
+    <string name="signin_failed">Ошибка входа в аккаунт Mozilla</string>
+    <string name="verify_failed">Ошибка проверки 6-значного кода</string>
+    <string name="token_add_failed">Ошибка добавления по sessionToken</string>
+
+    <!-- VPN service notifications -->
+    <string name="notif_connecting_title">Mozilla VPN · Подключение…</string>
+    <string name="notif_connecting_text">Запуск локального туннеля и проверка ProxyPass</string>
+    <string name="notif_channel_name">Статус туннеля Mozilla VPN</string>
+    <string name="notif_channel_desc">Показывает активный сервер Fastly и профиль Mozilla VPN</string>
+    <string name="notif_disconnect">Отключить</string>
+    <string name="notif_connected">Подключено · %1$s</string>
+    <string name="session_name">Mozilla VPN</string>
+</resources>

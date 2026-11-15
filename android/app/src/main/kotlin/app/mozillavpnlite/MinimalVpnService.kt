@@ -63,8 +63,8 @@ class MinimalVpnService : VpnService() {
         ensureNotificationChannel()
         startForegroundCompat(
             buildNotification(
-                title = "Mozilla VPN Lite · Подключение…",
-                text = "Запуск локального туннеля и проверка ProxyPass"
+                title = getString(R.string.notif_connecting_title),
+                text = getString(R.string.notif_connecting_text)
             )
         )
 
@@ -132,7 +132,7 @@ class MinimalVpnService : VpnService() {
      */
     private fun establishTunnel(socksPort: Int): Boolean {
         val builder = Builder()
-            .setSession("Mozilla VPN Lite")
+            .setSession(getString(R.string.session_name))
             .setMtu(1400)
             .addAddress("10.0.0.2", 32)
             .addRoute("0.0.0.0", 0)
@@ -170,10 +170,10 @@ class MinimalVpnService : VpnService() {
             val nm = getSystemService(NotificationManager::class.java) ?: return
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "Статус туннеля Mozilla VPN Lite",
+                getString(R.string.notif_channel_name),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Показывает активный сервер Fastly и профиль Mozilla VPN"
+                description = getString(R.string.notif_channel_desc)
                 setShowBadge(false)
             }
             nm.createNotificationChannel(channel)
@@ -218,7 +218,7 @@ class MinimalVpnService : VpnService() {
             .addAction(
                 Notification.Action.Builder(
                     android.R.drawable.ic_menu_close_clear_cancel,
-                    "Отключить",
+                    getString(R.string.notif_disconnect),
                     stopPending
                 ).build()
             )
@@ -230,7 +230,12 @@ class MinimalVpnService : VpnService() {
             val raw = mobile.Mobile.statusJSON()
             val root = JSONObject(raw)
             val loc = root.optJSONObject("location")
-            val countryRu = loc?.optString("name_ru", "Германия")?.ifBlank { "Германия" } ?: "Германия"
+            val isRu = resources.configuration.locales[0]?.language == "ru"
+            val countryName = if (isRu) {
+                loc?.optString("name_ru", "")?.ifBlank { null } ?: loc?.optString("name", "Germany") ?: "Germany"
+            } else {
+                loc?.optString("name", "Germany")?.ifBlank { "Germany" } ?: "Germany"
+            }
             val host = loc?.optString("server_host", "fastly-masque.net") ?: "fastly-masque.net"
 
             var activeEmail = ""
@@ -245,7 +250,7 @@ class MinimalVpnService : VpnService() {
                 }
             }
 
-            val title = "Подключено · $countryRu"
+            val title = getString(R.string.notif_connected, countryName)
             val subtitle = if (activeEmail.isNotBlank()) "$activeEmail · $host" else host
             val nm = getSystemService(NotificationManager::class.java)
             nm?.notify(NOTIFICATION_ID, buildNotification(title, subtitle))
@@ -275,7 +280,8 @@ class MinimalVpnService : VpnService() {
         @Synchronized
         fun startCore(context: Context, on: Boolean) {
             if (!mobile.Mobile.running()) {
-                mobile.Mobile.start(dataDir(context).absolutePath, on)
+                val lang = context.resources.configuration.locales[0]?.language ?: "en"
+                mobile.Mobile.start(dataDir(context).absolutePath, on, lang)
             }
         }
 

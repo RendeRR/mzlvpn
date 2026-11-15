@@ -1,4 +1,6 @@
-# Mozilla VPN Lite (mzlvpn)
+# Mozilla VPN (mzlvpn)
+
+**Русский** · [English](README.en.md)
 
 Лёгкий неофициальный Android-клиент Mozilla VPN / Firefox Private Network.
 Нативный Kotlin + Jetpack Compose, сетевое ядро на Go. Дизайн «Прибор»:
@@ -30,6 +32,9 @@
   HTTP/3 (QUIC/UDP) во многих сетях работает нестабильно, поэтому дефолт — HTTP/2.
 - Честный локальный подсчёт трафика по каждому аккаунту — сервер расход
   не сообщает (подробно: [QUOTA.md](QUOTA.md)).
+- Интерфейс на английском и русском; язык следует системному и меняется
+  в системных настройках (Настройки → Языки → Языки приложений), отдельного
+  переключателя в приложении нет.
 
 ## Как устроено
 
@@ -70,7 +75,7 @@ IBM Plex Mono) скачивает gradle-задача `fetchDesignFonts` — в 
 
 - `android/` — приложение: Kotlin/Compose UI, VpnService, JNI-обвязка hev.
 - `core/` — Go-ядро: `fxa`, `guardian`, `accounts`, `tunnel`, `mobile`,
-  `serverlist`.
+  `serverlist`, `lang` (язык сообщений ядра).
 - `src/`, `server.ts`, `index.html` — веб-мокап интерфейса (наследие
   прототипирования; продукт — Android-приложение).
 - `QUOTA.md` — факты о квоте Mozilla и принятые решения по подсчёту.

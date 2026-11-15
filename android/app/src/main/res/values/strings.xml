@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mozilla VPN</string>
+    <string name="brand_plate">MZLVPN · SER. 001</string>
+
+    <!-- Header / state -->
+    <string name="state_connected">CONNECTED</string>
+    <string name="state_connecting">CONNECTING</string>
+    <string name="state_off">DISCONNECTED</string>
+    <string name="tunnel_active">TUNNEL ACTIVE</string>
+    <string name="tunnel_inactive">TUNNEL INACTIVE</string>
+    <string name="tunnel_connecting">ESTABLISHING CONNECTION…</string>
+    <string name="spec_location">LOCATION</string>
+    <string name="spec_server">SERVER</string>
+    <string name="spec_ping">PING</string>
+    <string name="spec_protocol">PROTOCOL</string>
+    <string name="breaker_off">OFF</string>
+    <string name="breaker_on">ON</string>
+
+    <!-- Navigation -->
+    <string name="tab_console">CONSOLE</string>
+    <string name="tab_accounts">ACCOUNTS · %1$d</string>
+    <string name="tab_servers">SERVERS · %1$d</string>
+
+    <!-- Home -->
+    <string name="home_accounts">ACCOUNTS · %1$d</string>
+    <string name="home_locations_fast">LOCATIONS · FASTEST</string>
+    <string name="quota_used_line">USED: %1$s OF %2$s</string>
+    <string name="quota_threshold_line">%1$d%% · THRESHOLD %2$d%%</string>
+    <string name="auto_row_code">AUTO</string>
+    <string name="fastest_title">Fastest</string>
+    <string name="fastest_subtitle">Auto ping</string>
+    <string name="add_account_first">Add a Mozilla account to connect</string>
+    <string name="checking_session">Checking the Mozilla session…</string>
+
+    <!-- Account plates -->
+    <string name="acc_status_active">ACTIVE</string>
+    <string name="acc_status_exhausted">QUOTA EXHAUSTED</string>
+    <string name="acc_status_ready">READY</string>
+    <string name="acc_profile_active">ACTIVE PROFILE</string>
+    <string name="acc_profile_reserve">IN RESERVE UNTIL RESET</string>
+    <string name="acc_profile_queue">IN ROTATION QUEUE</string>
+    <string name="btn_to_work">PUT TO WORK</string>
+    <string name="btn_in_rotation">IN ROTATION</string>
+    <string name="btn_acc_off">OFF</string>
+    <string name="btn_delete">DELETE</string>
+
+    <!-- Accounts tab -->
+    <string name="accounts_title">ACCOUNTS</string>
+    <string name="btn_add">+ ADD</string>
+    <string name="btn_close">CLOSE</string>
+    <string name="accounts_subline">MOZILLA PROFILES · %1$d · ACTIVE LIMIT %2$s · AUTO-ROTATION IN ORDER</string>
+    <string name="add_form_title">ADD A FIREFOX ACCOUNT (MOZILLA VPN)</string>
+    <string name="verify_totp_prompt">Enter the 6-digit two-factor authentication code (2FA TOTP):</string>
+    <string name="verify_email_prompt">Enter the 6-digit sign-in confirmation code from the Mozilla email:</string>
+    <string name="code_label_6">CODE · 6 DIGITS</string>
+    <string name="btn_back">BACK</string>
+    <string name="btn_confirm_code">CONFIRM CODE</string>
+    <string name="method_password">Password</string>
+    <string name="method_browser">Browser</string>
+    <string name="method_token">Token</string>
+    <string name="field_email">MOZILLA ACCOUNT EMAIL</string>
+    <string name="field_password">ACCOUNT PASSWORD</string>
+    <string name="btn_show">SHOW</string>
+    <string name="btn_hide">HIDE</string>
+    <string name="unblock_label">UNLOCK CODE FROM THE EMAIL · 8 CHARACTERS</string>
+    <string name="btn_signing_in">SIGNING IN TO MOZILLA…</string>
+    <string name="btn_save_proxypass">SAVE &amp; GET PROXYPASS</string>
+    <string name="webview_hint">The accounts.firefox.com sign-in window will open. After you enter your password, the app will intercept the token and ask for the 6-digit code from the Mozilla email.</string>
+    <string name="btn_open_webview">OPEN MOZILLA SIGN-IN (WEBVIEW)</string>
+    <string name="field_email_optional">ACCOUNT EMAIL (OPTIONAL)</string>
+    <string name="field_session_token">64-HEX SESSIONTOKEN FROM WEBCHANNEL</string>
+    <string name="threshold_title">ACCOUNT AUTO-SWITCH THRESHOLD</string>
+    <string name="threshold_value">%1$d%% OF QUOTA</string>
+    <string name="threshold_hint">When the active account reaches %1$d%% of its quota%2$s, the core automatically requests a ProxyPass for the next account in the list.</string>
+
+    <!-- Servers tab -->
+    <string name="servers_title">LOCATIONS</string>
+    <string name="servers_subline">MOZILLA LOCATIONS · %1$d · SOURCE: REMOTE SETTINGS · VPN-SERVERLIST</string>
+    <string name="btn_ping">↻ PING</string>
+    <string name="btn_pinging">PING…</string>
+    <string name="search_label">SEARCH</string>
+    <string name="search_hint">Country, city or Fastly node…</string>
+    <string name="mode_recommended">RECOMMENDED</string>
+    <string name="mode_fastest">FASTEST</string>
+    <string name="mode_fastest_sub">Min. latency</string>
+
+    <!-- WebView dialog -->
+    <string name="webview_title">MOZILLA ACCOUNT SIGN-IN</string>
+
+    <!-- CoreBridge formatting and fallbacks -->
+    <string name="unit_gb">%1$.2f GB</string>
+    <string name="unit_mb">%1$.0f MB</string>
+    <string name="unit_kb">%1$.0f KB</string>
+    <string name="unit_zero">0 MB</string>
+    <string name="ping_fmt">%1$d ms</string>
+    <string name="core_unknown_response">Unknown core response</string>
+    <string name="core_parse_error">Failed to parse the core response</string>
+    <string name="signin_failed">Mozilla sign-in failed</string>
+    <string name="verify_failed">6-digit code verification failed</string>
+    <string name="token_add_failed">Failed to add the account via sessionToken</string>
+
+    <!-- VPN service notifications -->
+    <string name="notif_connecting_title">Mozilla VPN · Connecting…</string>
+    <string name="notif_connecting_text">Starting the local tunnel and checking the ProxyPass</string>
+    <string name="notif_channel_name">Mozilla VPN tunnel status</string>
+    <string name="notif_channel_desc">Shows the active Fastly server and Mozilla VPN profile</string>
+    <string name="notif_disconnect">Disconnect</string>
+    <string name="notif_connected">Connected · %1$s</string>
+    <string name="session_name">Mozilla VPN</string>
+</resources>

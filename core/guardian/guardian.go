@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"mozillavpnlite/core/fxa"
+	"mozillavpnlite/core/lang"
 )
 
 const (
@@ -24,9 +25,9 @@ const (
 )
 
 var (
-	ErrTokenInvalid  = errors.New("OAuth токен отклонён Guardian (HTTP 401)")
-	ErrNotEntitled   = errors.New("аккаунт ещё не активирован в Guardian (HTTP 403)")
-	ErrQuotaExceeded = errors.New("месячная квота исчерпана (HTTP 429)")
+	ErrTokenInvalid  = lang.Bilingual("OAuth токен отклонён Guardian (HTTP 401)", "OAuth token rejected by Guardian (HTTP 401)")
+	ErrNotEntitled   = lang.Bilingual("аккаунт ещё не активирован в Guardian (HTTP 403)", "account is not activated in Guardian yet (HTTP 403)")
+	ErrQuotaExceeded = lang.Bilingual("месячная квота исчерпана (HTTP 429)", "monthly quota exhausted (HTTP 429)")
 )
 
 type QuotaUsage struct {
@@ -118,7 +119,7 @@ func fetchTokenOnce(ctx context.Context, accessToken string) (*ProxyPass, error)
 		Token string `json:"token"`
 	}
 	if err := json.Unmarshal(body, &tokenResp); err != nil || tokenResp.Token == "" {
-		return nil, errors.New("пустой токен ProxyPass в ответе Guardian")
+		return nil, errors.New(lang.T("пустой токен ProxyPass в ответе Guardian", "empty ProxyPass token in the Guardian response"))
 	}
 
 	exp := parseJWTExpiry(tokenResp.Token)

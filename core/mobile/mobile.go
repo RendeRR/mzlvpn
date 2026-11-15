@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 	"mozillavpnlite/core/accounts"
 	"mozillavpnlite/core/fxa"
+	"mozillavpnlite/core/lang"
 	"mozillavpnlite/core/serverlist"
 	"mozillavpnlite/core/tunnel"
 )
@@ -49,8 +51,16 @@ func jsonResult(state, message, email string) string {
 	return string(b)
 }
 
+// SetLanguage selects the language of the core's user-facing messages
+// ("en*" → English, anything else → Russian). Safe to call at any time.
+func SetLanguage(code string) {
+	lang.Set(code)
+}
+
 // Start initializes the account pool and server list in dataDir.
-func Start(dataDir string, autoConnect bool) error {
+// language is the app's active UI language code (see SetLanguage).
+func Start(dataDir string, autoConnect bool, language string) error {
+	lang.Set(language)
 	mu.Lock()
 	if pool != nil {
 		mu.Unlock()
@@ -143,11 +153,11 @@ func Connect() error {
 	mu.Unlock()
 
 	if p == nil {
-		return errors.New("ядро не инициализировано")
+		return errors.New(lang.T("ядро не инициализировано", "core is not initialized"))
 	}
 	active := p.ActiveAccount()
 	if active == nil {
-		return errors.New("добавьте хотя бы один аккаунт Mozilla во вкладке Аккаунты")
+		return errors.New(lang.T("добавьте хотя бы один аккаунт Mozilla во вкладке Аккаунты", "add at least one Mozilla account in the Accounts tab"))
 	}
 
 	// Start local SOCKS5 listener immediately using warm token if available
@@ -235,7 +245,7 @@ func SwitchAccount(accountID string) error {
 	p := pool
 	mu.Unlock()
 	if p == nil {
-		return errors.New("ядро не инициализировано")
+		return errors.New(lang.T("ядро не инициализировано", "core is not initialized"))
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -255,15 +265,15 @@ func SignInPassword(email, password, unblockCode string) string {
 	p := pool
 	mu.Unlock()
 	if p == nil {
-		return jsonResult("error", "Ядро ещё не инициализировано", email)
+		return jsonResult("error", lang.T("Ядро ещё не инициализировано", "The core is not initialized yet"), email)
 	}
 
 	email = strings.TrimSpace(email)
 	if email == "" || !strings.Contains(email, "@") {
-		return jsonResult("error", "Введите корректный Email аккаунта Mozilla", email)
+		return jsonResult("error", lang.T("Введите корректный Email аккаунта Mozilla", "Enter a valid Mozilla account email"), email)
 	}
 	if password == "" {
-		return jsonResult("error", "Введите пароль от аккаунта Mozilla", email)
+		return jsonResult("error", lang.T("Введите пароль от аккаунта Mozilla", "Enter your Mozilla account password"), email)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 22*time.Second)
@@ -274,17 +284,17 @@ func SignInPassword(email, password, unblockCode string) string {
 		var apiErr *fxa.APIError
 		if errors.As(err, &apiErr) {
 			if apiErr.Status == 406 {
-				return jsonResult("need_browser", "Защита Fastly (HTTP 406) отклонила прямой запрос. Нажмите «Браузер».", email)
+				return jsonResult("need_browser", lang.T("Защита Fastly (HTTP 406) отклонила прямой запрос. Нажмите «Браузер».", "Fastly protection (HTTP 406) rejected the direct request. Tap “Browser”."), email)
 			}
 			if apiErr.Errno == 125 {
 				_ = fxa.SendUnblockCode(ctx, email)
-				return jsonResult("unblock_code", "Mozilla запросила код разблокировки входа (8 символов, отправлен вам на Email)", email)
+				return jsonResult("unblock_code", lang.T("Mozilla запросила код разблокировки входа (8 символов, отправлен вам на Email)", "Mozilla asked for a sign-in unblock code (8 characters, sent to your email)"), email)
 			}
 			if apiErr.Errno == 102 {
-				return jsonResult("error", "Аккаунт с таким Email не найден в Mozilla", email)
+				return jsonResult("error", lang.T("Аккаунт с таким Email не найден в Mozilla", "No Mozilla account found for this email"), email)
 			}
 			if apiErr.Errno == 103 {
-				return jsonResult("error", "Неверный пароль от аккаунта Mozilla", email)
+				return jsonResult("error", lang.T("Неверный пароль от аккаунта Mozilla", "Wrong Mozilla account password"), email)
 			}
 		}
 		return jsonResult("error", err.Error(), email)
@@ -303,15 +313,15 @@ func SignInPassword(email, password, unblockCode string) string {
 		mu.Unlock()
 
 		if loginResp.VerificationMethod == "totp-2fa" {
-			return jsonResult("verify_totp", "Введите 6-значный код из приложения-аутентификатора (2FA)", canonicalEmail)
+			return jsonResult("verify_totp", lang.T("Введите 6-значный код из приложения-аутентификатора (2FA)", "Enter the 6-digit code from your authenticator app (2FA)"), canonicalEmail)
 		}
-		return jsonResult("verify_email", "Mozilla отправила 6-значный код подтверждения входа на "+canonicalEmail+". Введите его ниже:", canonicalEmail)
+		return jsonResult("verify_email", fmt.Sprintf(lang.T("Mozilla отправила 6-значный код подтверждения входа на %s. Введите его ниже:", "Mozilla sent a 6-digit sign-in confirmation code to %s. Enter it below:"), canonicalEmail), canonicalEmail)
 	}
 
 	if _, err := p.AddWithSessionToken(ctx, canonicalEmail, loginResp.SessionToken); err != nil {
-		return jsonResult("error", "Ошибка выпуска ProxyPass: "+err.Error(), canonicalEmail)
+		return jsonResult("error", lang.T("Ошибка выпуска ProxyPass: ", "ProxyPass issue failed: ")+err.Error(), canonicalEmail)
 	}
-	return jsonResult("ok", "Аккаунт "+canonicalEmail+" успешно добавлен и активирован в Guardian", canonicalEmail)
+	return jsonResult("ok", fmt.Sprintf(lang.T("Аккаунт %s успешно добавлен и активирован в Guardian", "Account %s added and activated in Guardian"), canonicalEmail), canonicalEmail)
 }
 
 // VerifySignInCode confirms the pending sessionToken with the 6-digit code from email or 2FA authenticator.
@@ -324,7 +334,7 @@ func VerifySignInCode(code string) string {
 	mu.Unlock()
 
 	if p == nil || sessionHex == "" {
-		return jsonResult("error", "Нет активной сессии для подтверждения. Повторите вход.", email)
+		return jsonResult("error", lang.T("Нет активной сессии для подтверждения. Повторите вход.", "No active session to confirm. Please sign in again."), email)
 	}
 	cleanCode := strings.TrimSpace(code)
 
@@ -340,28 +350,28 @@ func VerifySignInCode(code string) string {
 		}
 		if err != nil {
 			if verified, vErr := fxa.SessionVerified(ctx, sessionHex); vErr != nil || !verified {
-				return jsonResult("error", "Код не принят Mozilla: "+err.Error(), email)
+				return jsonResult("error", lang.T("Код не принят Mozilla: ", "Mozilla did not accept the code: ")+err.Error(), email)
 			}
 		}
 	} else {
 		if verified, vErr := fxa.SessionVerified(ctx, sessionHex); vErr != nil || !verified {
-			return jsonResult("error", "Введите 6-значный код подтверждения из письма Mozilla", email)
+			return jsonResult("error", lang.T("Введите 6-значный код подтверждения из письма Mozilla", "Enter the 6-digit confirmation code from the Mozilla email"), email)
 		}
 	}
 
 	if _, err := p.AddWithSessionToken(ctx, email, sessionHex); err != nil {
 		var apiErr *fxa.APIError
 		if errors.As(err, &apiErr) && apiErr.Errno == 138 {
-			return jsonResult("verify_email", "Сессия ещё не подтверждена. Введите 6-значный код из письма Mozilla:", email)
+			return jsonResult("verify_email", lang.T("Сессия ещё не подтверждена. Введите 6-значный код из письма Mozilla:", "The session is not confirmed yet. Enter the 6-digit code from the Mozilla email:"), email)
 		}
-		return jsonResult("error", "Ошибка обмена OAuth / Guardian: "+err.Error(), email)
+		return jsonResult("error", lang.T("Ошибка обмена OAuth / Guardian: ", "OAuth / Guardian exchange failed: ")+err.Error(), email)
 	}
 
 	mu.Lock()
 	pendingSessionHex = ""
 	mu.Unlock()
 
-	return jsonResult("ok", "Аккаунт "+email+" подтверждён и активирован в Guardian!", email)
+	return jsonResult("ok", fmt.Sprintf(lang.T("Аккаунт %s подтверждён и активирован в Guardian!", "Account %s confirmed and activated in Guardian!"), email), email)
 }
 
 // AddAccountPassword is kept for backward compatibility and delegates to SignInPassword.
@@ -381,12 +391,12 @@ func AddAccountSessionToken(email, sessionTokenHex string) string {
 	p := pool
 	mu.Unlock()
 	if p == nil {
-		return jsonResult("error", "Ядро не инициализировано", email)
+		return jsonResult("error", lang.T("Ядро не инициализировано", "The core is not initialized"), email)
 	}
 
 	cleanToken := strings.TrimSpace(sessionTokenHex)
 	if len(cleanToken) != 64 {
-		return jsonResult("error", "SessionToken должен состоять из 64 hex-символов", email)
+		return jsonResult("error", lang.T("SessionToken должен состоять из 64 hex-символов", "The sessionToken must be 64 hex characters"), email)
 	}
 	cleanEmail := strings.TrimSpace(email)
 	if cleanEmail == "" {
@@ -406,7 +416,7 @@ func AddAccountSessionToken(email, sessionTokenHex string) string {
 	if err != nil || !verified {
 		return jsonResult(
 			"verify_email",
-			"Mozilla отправила 6-значный код подтверждения входа на "+cleanEmail+". Введите код из письма ниже:",
+			fmt.Sprintf(lang.T("Mozilla отправила 6-значный код подтверждения входа на %s. Введите код из письма ниже:", "Mozilla sent a 6-digit sign-in confirmation code to %s. Enter the code from the email below:"), cleanEmail),
 			cleanEmail,
 		)
 	}
@@ -416,18 +426,18 @@ func AddAccountSessionToken(email, sessionTokenHex string) string {
 		if errors.As(err, &apiErr) && apiErr.Errno == 138 {
 			return jsonResult(
 				"verify_email",
-				"Mozilla отправила 6-значный код подтверждения входа на "+cleanEmail+". Введите код из письма ниже:",
+				fmt.Sprintf(lang.T("Mozilla отправила 6-значный код подтверждения входа на %s. Введите код из письма ниже:", "Mozilla sent a 6-digit sign-in confirmation code to %s. Enter the code from the email below:"), cleanEmail),
 				cleanEmail,
 			)
 		}
-		return jsonResult("error", "Не удалось обменять SessionToken: "+err.Error(), cleanEmail)
+		return jsonResult("error", lang.T("Не удалось обменять SessionToken: ", "Failed to exchange the sessionToken: ")+err.Error(), cleanEmail)
 	}
 
 	mu.Lock()
 	pendingSessionHex = ""
 	mu.Unlock()
 
-	return jsonResult("ok", "Аккаунт "+cleanEmail+" успешно добавлен", cleanEmail)
+	return jsonResult("ok", fmt.Sprintf(lang.T("Аккаунт %s успешно добавлен", "Account %s added"), cleanEmail), cleanEmail)
 }
 
 func MoveAccount(accountID string, delta int) {

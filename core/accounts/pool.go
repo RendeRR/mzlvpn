@@ -19,6 +19,7 @@ import (
 
 	"mozillavpnlite/core/fxa"
 	"mozillavpnlite/core/guardian"
+	"mozillavpnlite/core/lang"
 )
 
 type Status string
@@ -100,7 +101,7 @@ func (p *Pool) recomputeLocked() {
 		if acc.Usage.RemainingBytes <= 0 || acc.Usage.UsedPercent() >= float64(p.ThresholdPercent) {
 			if len(p.Accounts) > 1 {
 				acc.Status = StatusReserved
-				acc.Reason = "Достигнут порог месячной квоты"
+				acc.Reason = lang.T("Достигнут порог месячной квоты", "Monthly quota threshold reached")
 			}
 		} else if acc.Status == StatusReserved {
 			acc.Status = StatusReady
@@ -276,7 +277,7 @@ func (p *Pool) Activate(ctx context.Context, id string) (*guardian.ProxyPass, er
 	}
 	if target == nil {
 		p.mu.Unlock()
-		return nil, errors.New("аккаунт не найден")
+		return nil, errors.New(lang.T("аккаунт не найден", "account not found"))
 	}
 	for _, a := range p.Accounts {
 		a.Active = (a.ID == id)
@@ -391,7 +392,7 @@ func (p *Pool) RotateToNextReady(ctx context.Context, skipID string) (*guardian.
 	}
 	if candidate == nil {
 		p.mu.Unlock()
-		return nil, errors.New("нет доступных резервных аккаунтов со свободной квотой")
+		return nil, errors.New(lang.T("нет доступных резервных аккаунтов со свободной квотой", "no spare accounts with free quota available"))
 	}
 	for _, a := range p.Accounts {
 		a.Active = (a.ID == candidate.ID)
@@ -439,7 +440,7 @@ func (p *Pool) Move(id string, delta int) error {
 		}
 	}
 	if idx < 0 {
-		return errors.New("аккаунт не найден")
+		return errors.New(lang.T("аккаунт не найден", "account not found"))
 	}
 	next := idx + delta
 	if next >= 0 && next < len(p.Accounts) {
