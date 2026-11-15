@@ -41,8 +41,7 @@ data class CoreSnapshot(
     val activeAccount: Int = 0,
     val thresholdPct: Int = 95,
     val accounts: List<AccountItem> = emptyList(),
-    val locations: List<LocationItem> = emptyList(),
-    val quotaEvents: List<String> = emptyList()
+    val locations: List<LocationItem> = emptyList()
 )
 
 object CoreBridge {
@@ -184,22 +183,6 @@ object CoreBridge {
                 }
             }
 
-            val quotaEvents = mutableListOf<String>()
-            val evArr = root.optJSONArray("quota_events") ?: JSONArray()
-            for (i in 0 until evArr.length()) {
-                val o = evArr.optJSONObject(i) ?: continue
-                val err = o.optString("error", "")
-                val sum = o.optString("summary", "")
-                val body = when {
-                    err.isNotBlank() -> "ОШИБКА: $err"
-                    sum.isNotBlank() -> sum
-                    else -> "заголовков квоты в ответе нет"
-                }
-                val status = o.optInt("status", 0)
-                val statusPart = if (status > 0) " · HTTP $status" else ""
-                quotaEvents.add("${o.optString("at", "")} · ${o.optString("source", "")}$statusPart · $body")
-            }
-
             CoreSnapshot(
                 state = if (isConnected) "connected" else "disconnected",
                 selectedLocation = selLoc,
@@ -207,8 +190,7 @@ object CoreBridge {
                 activeAccount = activeIdx,
                 thresholdPct = root.optInt("threshold_percent", 95),
                 accounts = accounts,
-                locations = locations,
-                quotaEvents = quotaEvents
+                locations = locations
             )
         } catch (_: Throwable) {
             CoreSnapshot()

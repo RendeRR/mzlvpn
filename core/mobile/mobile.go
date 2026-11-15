@@ -15,7 +15,6 @@ import (
 
 	"mozillavpnlite/core/accounts"
 	"mozillavpnlite/core/fxa"
-	"mozillavpnlite/core/guardian"
 	"mozillavpnlite/core/serverlist"
 	"mozillavpnlite/core/tunnel"
 )
@@ -532,7 +531,6 @@ func StatusJSON() string {
 		"threshold_percent": threshold,
 		"accounts":          accs,
 		"locations":         locsCopy,
-		"quota_events":      guardian.RecentQuotaEvents(),
 	}
 	data, _ := json.Marshal(payload)
 	return string(data)

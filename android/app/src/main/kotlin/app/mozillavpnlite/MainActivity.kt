@@ -1498,7 +1498,7 @@ private fun AccountsTabScreen(
                     )
                 }
                 Text(
-                    text = "ПРОФИЛИ MOZILLA · ${snap.accounts.size} · КАЖДЫЙ ДАЁТ 5 ГБ/МЕС · АВТО-СМЕНА ПО ОЧЕРЕДИ",
+                    text = "ПРОФИЛИ MOZILLA · ${snap.accounts.size} · ЛИМИТ АКТИВНОГО ${snap.accounts.getOrNull(snap.activeAccount)?.let { CoreBridge.formatBytes(it.limitBytes) } ?: "—"} · АВТО-СМЕНА ПО ОЧЕРЕДИ",
                     color = InkSoft,
                     fontSize = 11.sp,
                     fontFamily = PriborFonts.mono(FontWeight.Normal),
@@ -1875,42 +1875,12 @@ private fun AccountsTabScreen(
                 )
 
                 Text(
-                    text = "При достижении ${snap.thresholdPct}% из 5 ГБ ядро автоматически запрашивает ProxyPass следующего аккаунта в списке.",
+                    text = "При достижении ${snap.thresholdPct}% квоты активного аккаунта${snap.accounts.getOrNull(snap.activeAccount)?.let { " (${CoreBridge.formatBytes(it.limitBytes)})" } ?: ""} ядро автоматически запрашивает ProxyPass следующего аккаунта в списке.",
                     color = InkSoft,
                     fontSize = 12.sp,
                     fontFamily = PriborFonts.mono(FontWeight.Normal),
                     lineHeight = 16.sp
                 )
-            }
-
-            SectionLabel(text = "ДИАГНОСТИКА КВОТЫ · ЧТО ПРИСЛАЛ СЕРВЕР")
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Paper)
-                    .border(BorderStroke(1.dp, Ink), RectangleShape)
-                    .padding(13.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                if (snap.quotaEvents.isEmpty()) {
-                    Text(
-                        text = "Событий пока нет. Полностью остановите приложение и запустите снова — при старте ядро всегда запрашивает токен, и ответ сервера появится здесь.",
-                        color = InkSoft,
-                        fontSize = 12.sp,
-                        fontFamily = PriborFonts.mono(FontWeight.Normal),
-                        lineHeight = 16.sp
-                    )
-                } else {
-                    snap.quotaEvents.forEach { line ->
-                        Text(
-                            text = line,
-                            color = Ink,
-                            fontSize = 11.sp,
-                            fontFamily = PriborFonts.mono(FontWeight.Normal),
-                            lineHeight = 15.sp
-                        )
-                    }
-                }
             }
         }
     }

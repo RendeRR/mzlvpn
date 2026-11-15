@@ -11,7 +11,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -101,7 +100,7 @@ func (p *Pool) recomputeLocked() {
 		if acc.Usage.RemainingBytes <= 0 || acc.Usage.UsedPercent() >= float64(p.ThresholdPercent) {
 			if len(p.Accounts) > 1 {
 				acc.Status = StatusReserved
-				acc.Reason = "Достигнут порог месячной квоты 5 ГБ"
+				acc.Reason = "Достигнут порог месячной квоты"
 			}
 		} else if acc.Status == StatusReserved {
 			acc.Status = StatusReady
@@ -216,20 +215,12 @@ func (p *Pool) UpdateQuotaFromHeaders(h http.Header) {
 	if parsed == nil || parsed.Unlimited {
 		return
 	}
-	if summary := guardian.QuotaHeaderSummary(h); summary != "" {
-		log.Printf("[quota] connect headers: %s", summary)
-		guardian.RecordQuotaEvent("connect", 0, summary, nil)
-	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, a := range p.Accounts {
 		if a.Active {
 			mergeUsageLocked(a, parsed)
 			_ = p.saveLocked()
-			if a.Usage != nil {
-				log.Printf("[quota] after merge: used=%d limit=%d remaining=%d",
-					a.Usage.UsedBytes(), a.Usage.LimitBytes, a.Usage.RemainingBytes)
-			}
 			break
 		}
 	}
