@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -215,12 +216,19 @@ func (p *Pool) UpdateQuotaFromHeaders(h http.Header) {
 	if parsed == nil || parsed.Unlimited {
 		return
 	}
+	if summary := guardian.QuotaHeaderSummary(h); summary != "" {
+		log.Printf("[quota] connect headers: %s", summary)
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, a := range p.Accounts {
 		if a.Active {
 			mergeUsageLocked(a, parsed)
 			_ = p.saveLocked()
+			if a.Usage != nil {
+				log.Printf("[quota] after merge: used=%d limit=%d remaining=%d",
+					a.Usage.UsedBytes(), a.Usage.LimitBytes, a.Usage.RemainingBytes)
+			}
 			break
 		}
 	}

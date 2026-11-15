@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -93,6 +94,7 @@ func fetchTokenOnce(ctx context.Context, accessToken string) (*ProxyPass, error)
 	defer resp.Body.Close()
 
 	usage := ParseQuotaHeaders(resp.Header)
+	log.Printf("[quota] token fetch: status=%d %s", resp.StatusCode, QuotaHeaderSummary(resp.Header))
 	if usage == nil {
 		usage = DefaultQuotaUsage()
 	}
@@ -154,6 +156,30 @@ func applyHeaders(req *http.Request, accessToken string) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Cache-Control", "max-age=0")
 	req.Header.Set("User-Agent", fxa.FirefoxUserAgent)
+}
+
+// QuotaHeaderSummary renders the raw X-Quota-* header values (plus the
+// parsed numbers) for diagnostics. It returns "" when the response carries
+// no quota headers at all, so callers can log unconditionally without
+// flooding the log on every CONNECT.
+func QuotaHeaderSummary(h http.Header) string {
+	if h == nil {
+		return ""
+	}
+	rawLimit := strings.TrimSpace(h.Get("X-Quota-Limit"))
+	rawRem := strings.TrimSpace(h.Get("X-Quota-Remaining"))
+	rawReset := strings.TrimSpace(h.Get("X-Quota-Reset"))
+	rawUnlim := strings.TrimSpace(h.Get("X-Quota-Unlimited"))
+	if rawLimit == "" && rawRem == "" && rawReset == "" && rawUnlim == "" {
+		return ""
+	}
+	parsed := "parsed=nil"
+	if q := ParseQuotaHeaders(h); q != nil {
+		parsed = fmt.Sprintf("parsed_limit=%d parsed_remaining=%d parsed_reset=%s unlimited=%v",
+			q.LimitBytes, q.RemainingBytes, q.ResetAt.Format(time.RFC3339), q.Unlimited)
+	}
+	return fmt.Sprintf("limit=%q remaining=%q reset=%q unlimited=%q %s",
+		rawLimit, rawRem, rawReset, rawUnlim, parsed)
 }
 
 // ParseQuotaHeaders extracts X-Quota-Limit, X-Quota-Remaining, and X-Quota-Reset headers.
