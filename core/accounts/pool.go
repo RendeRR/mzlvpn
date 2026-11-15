@@ -50,6 +50,7 @@ func (a *Account) HasWarmPass() bool {
 
 type Pool struct {
 	mu               sync.Mutex
+	refreshMu        sync.Mutex
 	prewarming       bool
 	unsavedBytes     int64
 	filePath         string
@@ -303,6 +304,13 @@ func (p *Pool) Activate(ctx context.Context, id string) (*guardian.ProxyPass, er
 // EnsureFreshPass returns a valid ProxyPass for acc, refreshing OAuth or rotating
 // to the next account in the pool if acc's quota is exhausted.
 func (p *Pool) EnsureFreshPass(ctx context.Context, acc *Account) (*guardian.ProxyPass, error) {
+	// FxA refresh tokens rotate on every use: two concurrent refreshes
+	// presenting the same token make the loser fail with invalid_grant,
+	// which would wrongly mark a healthy account reauth-required.
+	// Serialize refreshes pool-wide and re-check expiry under the lock —
+	// when a sibling call (Activate's background refresh, Prewarm, the
+	// 401 path) just refreshed, this call needs no network round-trip.
+	p.refreshMu.Lock()
 	if time.Now().After(acc.Tokens.ExpiresAt.Add(-2 * time.Minute)) {
 		refreshed, err := fxa.RefreshAccessToken(ctx, acc.Tokens.RefreshToken)
 		if err != nil {
@@ -312,6 +320,7 @@ func (p *Pool) EnsureFreshPass(ctx context.Context, acc *Account) (*guardian.Pro
 			}
 			_ = p.saveLocked()
 			p.mu.Unlock()
+			p.refreshMu.Unlock()
 			return nil, err
 		}
 		p.mu.Lock()
@@ -319,6 +328,7 @@ func (p *Pool) EnsureFreshPass(ctx context.Context, acc *Account) (*guardian.Pro
 		_ = p.saveLocked()
 		p.mu.Unlock()
 	}
+	p.refreshMu.Unlock()
 
 	pass, err := guardian.FetchProxyPass(ctx, acc.Tokens.AccessToken)
 	p.mu.Lock()

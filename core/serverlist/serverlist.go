@@ -198,15 +198,28 @@ func sortFastestFirst(locs []Location) {
 
 // MeasureLatencies runs concurrent real network probes using dialProbe and sorts locations by real measured RTT.
 func MeasureLatencies(ctx context.Context, locations []Location, dialProbe func(ctx context.Context, endpoint string) (time.Duration, error)) []Location {
+	return MeasureLatenciesProgressive(ctx, locations, dialProbe, nil)
+}
+
+// MeasureLatenciesProgressive runs concurrent real network probes and invokes onProgress
+// with a sorted snapshot as probes complete, so fast nodes appear in the UI within
+// hundreds of milliseconds instead of waiting for unreachable nodes to time out.
+func MeasureLatenciesProgressive(
+	ctx context.Context,
+	locations []Location,
+	dialProbe func(ctx context.Context, endpoint string) (time.Duration, error),
+	onProgress func(snapshot []Location),
+) []Location {
 	results := make([]Location, len(locations))
 	copy(results, locations)
 
+	var resMu sync.Mutex
 	sem := make(chan struct{}, 10)
 	var wg sync.WaitGroup
 
 	for i := range results {
 		wg.Add(1)
-		go func(idx int) {
+		go func(idx int, ep string) {
 			defer wg.Done()
 			select {
 			case sem <- struct{}{}:
@@ -215,20 +228,34 @@ func MeasureLatencies(ctx context.Context, locations []Location, dialProbe func(
 			}
 			defer func() { <-sem }()
 
-			d, err := dialProbe(ctx, results[idx].Endpoint())
+			d, err := dialProbe(ctx, ep)
+			var ms int64
 			if err == nil && d > 0 {
-				ms := d.Milliseconds()
+				ms = d.Milliseconds()
 				if ms < 1 {
 					ms = 1
 				}
-				results[idx].PingMS = ms
-			} else {
-				results[idx].PingMS = 0
 			}
-		}(i)
+
+			resMu.Lock()
+			results[idx].PingMS = ms
+			if onProgress != nil && ms > 0 {
+				snap := make([]Location, len(results))
+				copy(snap, results)
+				sortFastestFirst(snap)
+				resMu.Unlock()
+				onProgress(snap)
+			} else {
+				resMu.Unlock()
+			}
+		}(i, results[i].Endpoint())
 	}
 	wg.Wait()
 
-	sortFastestFirst(results)
-	return results
+	resMu.Lock()
+	final := make([]Location, len(results))
+	copy(final, results)
+	resMu.Unlock()
+	sortFastestFirst(final)
+	return final
 }

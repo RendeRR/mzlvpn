@@ -75,8 +75,12 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             val ksFile = file("release.p12")
             signingConfig = if (ksFile.exists()) {
                 signingConfigs.getByName("releaseFixed")

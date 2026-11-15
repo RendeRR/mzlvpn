@@ -235,6 +235,7 @@ object CoreBridge {
             val snap = fetchSnapshotSync()
             val acc = snap.accounts.getOrNull(idx) ?: return@withContext
             mobile.Mobile.switchAccount(acc.id)
+            MinimalVpnService.refreshNotification(appCtx)
         } catch (_: Throwable) {}
     }
 
@@ -242,6 +243,7 @@ object CoreBridge {
         try {
             val mapped = if (code == "recommended") "REC" else code
             mobile.Mobile.setLocation(mapped)
+            MinimalVpnService.refreshNotification(appCtx)
         } catch (_: Throwable) {}
     }
 

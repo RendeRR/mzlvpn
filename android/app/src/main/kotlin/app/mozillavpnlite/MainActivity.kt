@@ -198,10 +198,27 @@ fun MozillaVpnLiteApp() {
         }
     }
 
-    LaunchedEffect(Unit) {
+    var isAppVisible by remember { mutableStateOf(true) }
+    DisposableEffect(context) {
+        val owner = context as? androidx.lifecycle.LifecycleOwner
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_START -> isAppVisible = true
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> isAppVisible = false
+                else -> {}
+            }
+        }
+        owner?.lifecycle?.addObserver(observer)
+        onDispose {
+            owner?.lifecycle?.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(isAppVisible) {
+        if (!isAppVisible) return@LaunchedEffect
         CoreBridge.refreshServers()
         snap = CoreBridge.getSnapshot()
-        while (true) {
+        while (isAppVisible) {
             delay(1500)
             snap = CoreBridge.getSnapshot()
         }
@@ -2091,6 +2108,19 @@ private fun FxaWebViewDialog(
         val base = "https://accounts.firefox.com/?context=fx_desktop_v3&service=sync&action=email"
         if (initialEmail.isNotBlank()) "$base&email=${android.net.Uri.encode(initialEmail)}" else base
     }
+    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            webViewRef?.let { wv ->
+                try {
+                    wv.stopLoading()
+                    wv.destroy()
+                } catch (_: Throwable) {}
+            }
+            webViewRef = null
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -2151,6 +2181,7 @@ private fun FxaWebViewDialog(
                     .fillMaxWidth(),
                 factory = { ctx ->
                     WebView(ctx).apply {
+                        webViewRef = this
                         CookieManager.getInstance().setAcceptCookie(true)
                         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                         settings.javaScriptEnabled = true

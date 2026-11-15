@@ -98,12 +98,14 @@ type Engine struct {
 	listener       net.Listener
 	proxyHost      string
 	bearerToken    string
+	tokenBroadcast chan struct{}
 	h2Pool         []h2ConnEntry
 	tlsCfg         *tls.Config // test hook: overrides the default TLS config when set
 	dohMu          sync.Mutex
 	dohConn        *tls.Conn
 	dohReader      *bufio.Reader
-	dohCC          *http2.ClientConn // session serving dohConn's stream
+	dohH2CC        *http2.ClientConn // multiplexed H2 client over dohConn when ALPN h2 is negotiated
+	dohCC          *http2.ClientConn // upstream proxy session serving dohConn's stream
 	watchStop      chan struct{}
 	watchDone      chan struct{}
 	tickMu         sync.Mutex
@@ -119,7 +121,9 @@ type Engine struct {
 }
 
 func NewEngine() *Engine {
-	return &Engine{}
+	return &Engine{
+		tokenBroadcast: make(chan struct{}),
+	}
 }
 
 // Start begins listening for local SOCKS5 connections from Android VpnService (Tun2Socks).
@@ -145,6 +149,9 @@ func (e *Engine) Start(listenAddr, proxyEndpoint, proxyPassJWT string) (int, err
 	}
 	e.proxyHost = proxyEndpoint
 	e.bearerToken = proxyPassJWT
+	if e.tokenBroadcast == nil {
+		e.tokenBroadcast = make(chan struct{})
+	}
 
 	if e.listener == nil {
 		ln, err := net.Listen("tcp", listenAddr)
@@ -228,10 +235,18 @@ func (e *Engine) suspensionCheck(now time.Time) bool {
 	return false
 }
 
-// UpdateToken hot-swaps the active Mozilla account's ProxyPass JWT in 0 ms without dropping the tunnel.
+// UpdateToken hot-swaps the active Mozilla account's ProxyPass JWT in 0 ms without dropping the tunnel
+// and immediately wakes any concurrent streams waiting on a 401 refresh.
 func (e *Engine) UpdateToken(proxyPassJWT string) {
 	e.mu.Lock()
+	changed := e.bearerToken != proxyPassJWT
 	e.bearerToken = proxyPassJWT
+	if changed {
+		if e.tokenBroadcast != nil {
+			close(e.tokenBroadcast)
+		}
+		e.tokenBroadcast = make(chan struct{})
+	}
 	e.mu.Unlock()
 }
 
@@ -264,21 +279,24 @@ func isClosedConnErr(err error) bool {
 // while the device sleeps). The callback (mobile) fetches a fresh
 // pass and hot-swaps it. Debounced: a burst of streams all meet the
 // same dead token within the same second, and one refresh fixes all.
-// Returns true when this call actually fired the callback, i.e. a
-// refresh is now in flight.
+// Returns true whenever a refresh callback is now in flight (either
+// triggered by this call or already triggered within the debounce window),
+// so all concurrent streams hitting 401 wait for the same refresh.
 func (e *Engine) noteAuthFailure() bool {
 	e.authMu.Lock()
-	if time.Since(e.lastAuthFail) < 10*time.Second {
+	cb := e.OnAuthFailure
+	if cb == nil {
 		e.authMu.Unlock()
 		return false
 	}
-	e.lastAuthFail = time.Now()
-	cb := e.OnAuthFailure
-	e.authMu.Unlock()
-	if cb != nil {
-		go cb()
+	if time.Since(e.lastAuthFail) < 10*time.Second {
+		e.authMu.Unlock()
+		return true
 	}
-	return cb != nil
+	e.lastAuthFail = time.Now()
+	e.authMu.Unlock()
+	go cb()
+	return true
 }
 
 // notePreDataDeath records a stream that died on cc before delivering
@@ -331,22 +349,32 @@ func (e *rejectionError) Error() string {
 }
 
 // waitTokenChange blocks until the engine's bearer token is replaced
-// (a refresh landing after a 401) or the timeout passes.
-func (e *Engine) waitTokenChange(timeout time.Duration) bool {
+// (a refresh landing after a 401) or the timeout passes. Uses a broadcast
+// channel closed by UpdateToken so all waiting streams resume in 0 ms.
+func (e *Engine) waitTokenChange(timeout time.Duration, failedToken string) bool {
 	e.mu.RLock()
-	before := e.bearerToken
-	e.mu.RUnlock()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		time.Sleep(100 * time.Millisecond)
-		e.mu.RLock()
-		now := e.bearerToken
+	if e.bearerToken != failedToken {
 		e.mu.RUnlock()
-		if now != before {
-			return true
-		}
+		return true
 	}
-	return false
+	if e.tokenBroadcast == nil {
+		e.mu.RUnlock()
+		return false
+	}
+	waitCh := e.tokenBroadcast
+	e.mu.RUnlock()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-waitCh:
+		return true
+	case <-timer.C:
+		e.mu.RLock()
+		changed := e.bearerToken != failedToken
+		e.mu.RUnlock()
+		return changed
+	}
 }
 
 // Probe opens one CONNECT stream to the DoH authority and closes it,
@@ -697,12 +725,70 @@ func parseSocksAddrBytes(b []byte) (string, uint16, error) {
 	}
 }
 
+// synthesizeEmptyAAAA checks if dnsQuery is a standard single-question DNS query
+// for QTYPE=28 (AAAA, IPv6) and QCLASS=1 (IN). Because the Android TUN interface
+// is configured as IPv4-only (10.0.0.2/32 -> 0.0.0.0/0), returning an immediate
+// RFC 1035 NOERROR empty response for AAAA queries avoids an unnecessary upstream
+// DNS round-trip on every domain lookup and prevents apps from attempting direct
+// IPv6 connections outside the tunnel.
+func synthesizeEmptyAAAA(dnsQuery []byte) ([]byte, bool) {
+	if len(dnsQuery) < 17 {
+		return nil, false
+	}
+	flags := binary.BigEndian.Uint16(dnsQuery[2:4])
+	// QR must be 0 (query) and Opcode must be 0 (standard query)
+	if (flags&0x8000) != 0 || (flags&0x7800) != 0 {
+		return nil, false
+	}
+	qdCount := binary.BigEndian.Uint16(dnsQuery[4:6])
+	if qdCount != 1 {
+		return nil, false
+	}
+	// Walk the QNAME starting at byte 12
+	pos := 12
+	for pos < len(dnsQuery) {
+		l := int(dnsQuery[pos])
+		pos++
+		if l == 0 {
+			break
+		}
+		if (l & 0xc0) != 0 {
+			// Compressed label in single question — unexpected, let upstream handle it
+			return nil, false
+		}
+		pos += l
+	}
+	if pos+4 > len(dnsQuery) {
+		return nil, false
+	}
+	qtype := binary.BigEndian.Uint16(dnsQuery[pos : pos+2])
+	qclass := binary.BigEndian.Uint16(dnsQuery[pos+2 : pos+4])
+	if qtype != 28 || qclass != 1 {
+		return nil, false
+	}
+
+	questionEnd := pos + 4
+	resp := make([]byte, questionEnd)
+	copy(resp, dnsQuery[:questionEnd])
+	// Set QR=1 (response), RD preserved, RA=1 (recursion available), RCODE=0 (NOERROR)
+	respFlags := (flags & 0x0100) | 0x8080
+	binary.BigEndian.PutUint16(resp[2:4], respFlags)
+	binary.BigEndian.PutUint16(resp[4:6], 1)   // QDCOUNT = 1
+	binary.BigEndian.PutUint16(resp[6:8], 0)   // ANCOUNT = 0
+	binary.BigEndian.PutUint16(resp[8:10], 0)  // NSCOUNT = 0
+	binary.BigEndian.PutUint16(resp[10:12], 0) // ARCOUNT = 0
+	return resp, true
+}
+
 // forwardDNS resolves one raw DNS query through the H2 tunnel. The primary
 // path is DNS-over-HTTPS on :443 — the port the data plane already uses for
 // everything else; CONNECT proxies that refuse egress to :53 were observed
 // to kill all browser traffic while IP-based apps (Telegram) kept working.
 // Classic DNS-over-TCP to 1.1.1.1:53 remains as fallback.
 func (e *Engine) forwardDNS(dnsQuery []byte) ([]byte, error) {
+	if synth, ok := synthesizeEmptyAAAA(dnsQuery); ok {
+		return synth, nil
+	}
 	resp, err := e.forwardDNSOverHTTPS(dnsQuery)
 	if err == nil && len(resp) > 0 {
 		return resp, nil
@@ -742,44 +828,72 @@ func (c *streamConn) SetWriteDeadline(time.Time) error { return nil }
 
 // forwardDNSOverHTTPS sends the raw DNS message as an RFC 8484
 // application/dns-message POST to Cloudflare DoH, over TLS inside an H2
-// CONNECT stream to 1.1.1.1:443. One TLS connection is pooled and reused
-// (queries are serialized — DNS volume is low and correctness beats
-// parallelism here); a failed exchange closes it and retries once on a
-// fresh connection.
+// CONNECT stream to 1.1.1.1:443. When Cloudflare negotiates ALPN "h2",
+// queries run concurrently over the multiplexed http2.ClientConn without
+// holding dohMu during the network round-trip (eliminating DNS Head-of-Line
+// blocking when opening pages with 10+ parallel DNS lookups). Falls back
+// seamlessly to serialized HTTP/1.1 when ALPN h2 is not negotiated.
 func (e *Engine) forwardDNSOverHTTPS(dnsQuery []byte) ([]byte, error) {
-	e.dohMu.Lock()
-	defer e.dohMu.Unlock()
-
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
-		if e.dohConn == nil {
-			conn, cc, err := e.dialDoH()
+		e.dohMu.Lock()
+		if e.dohConn == nil || (e.dohH2CC != nil && !e.dohH2CC.CanTakeNewRequest()) {
+			e.closeDoHLocked()
+			conn, h2cc, cc, err := e.dialDoH()
 			if err != nil {
+				e.dohMu.Unlock()
 				return nil, err
 			}
 			e.dohConn = conn
-			e.dohReader = bufio.NewReader(conn)
+			e.dohH2CC = h2cc
+			if h2cc == nil {
+				e.dohReader = bufio.NewReader(conn)
+			}
 			e.dohCC = cc
 		}
-		resp, err := e.dohRoundTripBounded(e.dohConn, e.dohReader, dnsQuery)
+		h2cc := e.dohH2CC
+		conn := e.dohConn
+		reader := e.dohReader
+		servingCC := e.dohCC
+		if h2cc != nil {
+			// Release dohMu before the network round-trip so parallel DNS
+			// queries multiplex concurrently over the single H2 DoH stream.
+			e.dohMu.Unlock()
+			resp, err := e.dohRoundTripH2(h2cc, conn, dnsQuery)
+			if err == nil {
+				return resp, nil
+			}
+			lastErr = err
+			e.dohMu.Lock()
+			if e.dohConn == conn {
+				e.closeDoHLocked()
+				e.dohCC = nil
+			}
+			e.dohMu.Unlock()
+			if servingCC != nil {
+				e.evictH2Conn(servingCC)
+			}
+			continue
+		}
+
+		// HTTP/1.1 fallback path (holds dohMu while reading/writing conn).
+		resp, err := e.dohRoundTripBounded(conn, reader, dnsQuery)
 		if err == nil {
+			e.dohMu.Unlock()
 			return resp, nil
 		}
 		lastErr = err
-		deadCC := e.dohCC
 		e.closeDoHLocked()
 		e.dohCC = nil
-		if deadCC != nil {
-			// The session that carried the failed DoH stream is as much
-			// a suspect as the stream: evict it so the redial (and the
-			// DNS-over-TCP fallback) do not re-enter the same corpse.
-			e.evictH2Conn(deadCC)
+		e.dohMu.Unlock()
+		if servingCC != nil {
+			e.evictH2Conn(servingCC)
 		}
 	}
 	return nil, lastErr
 }
 
-func (e *Engine) dialDoH() (*tls.Conn, *http2.ClientConn, error) {
+func (e *Engine) dialDoH() (*tls.Conn, *http2.ClientConn, *http2.ClientConn, error) {
 	// The H2 stream must outlive this call (it backs the pooled DoH
 	// connection), so it is opened with Background: openH2ConnectStream
 	// binds the stream to the caller's context, and cancelling that
@@ -787,12 +901,13 @@ func (e *Engine) dialDoH() (*tls.Conn, *http2.ClientConn, error) {
 	// its own short-lived context.
 	rc, wc, cc, err := e.openH2ConnectStreamCC(context.Background(), "1.1.1.1:443")
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	raw := &streamConn{Reader: rc, Writer: wc, rc: rc, wc: wc}
 	cfg := &tls.Config{
 		ServerName:         "cloudflare-dns.com",
 		MinVersion:         tls.VersionTLS12,
+		NextProtos:         []string{"h2", "http/1.1"},
 		ClientSessionCache: currentSessionCache(),
 	}
 	if e.tlsCfg != nil {
@@ -802,26 +917,83 @@ func (e *Engine) dialDoH() (*tls.Conn, *http2.ClientConn, error) {
 		}
 	}
 	tlsConn := tls.Client(raw, cfg)
-	hsCtx, hsCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	hsCtx, hsCancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer hsCancel()
 	if err := tlsConn.HandshakeContext(hsCtx); err != nil {
 		_ = raw.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return tlsConn, cc, nil
+	if tlsConn.ConnectionState().NegotiatedProtocol == "h2" {
+		tr := &http2.Transport{
+			ReadIdleTimeout: 15 * time.Second,
+			PingTimeout:     5 * time.Second,
+		}
+		if h2cc, err := tr.NewClientConn(tlsConn); err == nil {
+			return tlsConn, h2cc, cc, nil
+		}
+	}
+	return tlsConn, nil, cc, nil
 }
 
 // dohExchangeTimeout bounds one DoH request/response exchange. The DoH
 // connection rides an H2 stream, whose deadlines are no-ops — without
 // this bound, an exchange on a path that silently died (device asleep,
-// network gone) blocks forever; and because every DNS query serializes
-// on dohMu, it takes all of DNS down with it. A var so tests can shrink
-// it.
-var dohExchangeTimeout = 6 * time.Second
+// network gone) blocks forever. 4s is the compromise: the serialized
+// era needed 6s because one stuck exchange queued every query behind
+// it; with H2 multiplexing a slow exchange no longer blocks siblings,
+// but the first exchange after sleep may also pay a session redial,
+// which 2.5s did not reliably leave room for.
+var dohExchangeTimeout = 4 * time.Second
 
 type dohResult struct {
 	body []byte
 	err  error
+}
+
+// dohRoundTripH2 runs a concurrent RFC 8484 POST over an HTTP/2 ClientConn.
+func (e *Engine) dohRoundTripH2(h2cc *http2.ClientConn, rawConn *tls.Conn, dnsQuery []byte) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), dohExchangeTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://cloudflare-dns.com/dns-query", bytes.NewReader(dnsQuery))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/dns-message")
+	req.Header.Set("Accept", "application/dns-message")
+
+	done := make(chan dohResult, 1)
+	go func() {
+		resp, rtErr := h2cc.RoundTrip(req)
+		if rtErr != nil {
+			done <- dohResult{err: rtErr}
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+			done <- dohResult{err: fmt.Errorf("doh status %s", resp.Status)}
+			return
+		}
+		body, readErr := io.ReadAll(io.LimitReader(resp.Body, 65535))
+		if readErr != nil {
+			done <- dohResult{err: readErr}
+			return
+		}
+		if len(body) < 2 || len(dnsQuery) < 2 || body[0] != dnsQuery[0] || body[1] != dnsQuery[1] {
+			done <- dohResult{err: errors.New("doh response txid mismatch")}
+			return
+		}
+		done <- dohResult{body: body}
+	}()
+
+	select {
+	case r := <-done:
+		return r.body, r.err
+	case <-ctx.Done():
+		_ = rawConn.Close()
+		return nil, errors.New("doh exchange timed out")
+	}
 }
 
 // dohRoundTripBounded runs one DoH exchange with a hard timeout. On
@@ -881,13 +1053,14 @@ func (e *Engine) closeDoHLocked() {
 		_ = e.dohConn.Close()
 		e.dohConn = nil
 		e.dohReader = nil
+		e.dohH2CC = nil
 	}
 }
 
 // forwardDNSOverTCP encapsulates a raw UDP DNS query in RFC 1035 2-byte length framing
 // and sends it through the Fastly HTTP/2 CONNECT tunnel to Cloudflare DNS (1.1.1.1:53).
 func (e *Engine) forwardDNSOverTCP(dnsQuery []byte) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	rc, wc, err := e.openH2ConnectStream(ctx, "1.1.1.1:53")
@@ -942,13 +1115,26 @@ func resetSessionCache() {
 	sessionCacheMu.Unlock()
 }
 
+// pickH2ConnLocked selects the healthy HTTP/2 session with the fewest
+// active streams, distributing load across the pool when multiple
+// sessions are open.
 func (e *Engine) pickH2ConnLocked() *http2.ClientConn {
+	var best *http2.ClientConn
+	var bestActive int
 	for _, entry := range e.h2Pool {
-		if entry.cc != nil && entry.cc.CanTakeNewRequest() {
-			return entry.cc
+		if entry.cc == nil || !entry.cc.CanTakeNewRequest() {
+			continue
+		}
+		active := entry.cc.State().StreamsActive
+		if best == nil || active < bestActive {
+			best = entry.cc
+			bestActive = active
+			if active == 0 {
+				break
+			}
 		}
 	}
-	return nil
+	return best
 }
 
 func (e *Engine) ensureH2Session(ctx context.Context) (*http2.ClientConn, string, error) {
@@ -1084,6 +1270,22 @@ func (e *Engine) evictH2Conn(cc *http2.ClientConn) {
 	e.forgetSessionDeaths(cc)
 }
 
+// cancelWriteCloser ensures the per-request context created for
+// connectHeaderTimeout is cancelled when the stream's write half closes,
+// preventing context child leaks on long-running sessions.
+type cancelWriteCloser struct {
+	io.WriteCloser
+	cancel context.CancelFunc
+}
+
+func (c *cancelWriteCloser) Close() error {
+	err := c.WriteCloser.Close()
+	if c.cancel != nil {
+		c.cancel()
+	}
+	return err
+}
+
 // openH2ConnectStream opens an HTTP/2 CONNECT tunnel stream to targetAuthority.
 // Uses URL.Opaque = targetAuthority and Host = targetAuthority so golang.org/x/net/http2
 // sends `:method = CONNECT` and `:authority = targetAuthority` (without :scheme/:path).
@@ -1110,7 +1312,7 @@ func (e *Engine) openH2ConnectStreamCC(ctx context.Context, targetAuthority stri
 	var lastErr error
 	waitedAuth := false
 	for attempt := 0; attempt < 3; attempt++ {
-		rc, wc, cc, authFired, err := e.openH2ConnectStreamOnce(ctx, targetAuthority)
+		rc, wc, cc, authPending, usedToken, err := e.openH2ConnectStreamOnce(ctx, targetAuthority)
 		if err == nil {
 			return rc, wc, cc, nil
 		}
@@ -1121,14 +1323,16 @@ func (e *Engine) openH2ConnectStreamCC(ctx context.Context, targetAuthority stri
 			return nil, nil, nil, err
 		}
 		var rejErr *rejectionError
-		if authFired && !waitedAuth && errors.As(err, &rejErr) && rejErr.status == http.StatusUnauthorized {
-			// The held token is dead and a refresh is in flight: wait
-			// for it to land and retry on the fresh token instead of
-			// failing the stream. Without this, the first page load
-			// after every wake died even though recovery took ~2 s —
-			// the app saw a reset and fell back to its offline page.
+		if authPending && !waitedAuth && errors.As(err, &rejErr) && rejErr.status == http.StatusUnauthorized {
+			// The held token is dead and a refresh is in flight (triggered
+			// either by this stream or a sibling stream a millisecond ago):
+			// wait on the broadcast channel for the fresh token to land
+			// and retry on it instead of failing the stream. Without this,
+			// the first page load after every wake died even though
+			// recovery took ~2 s — the app saw a reset and fell back to
+			// its offline page.
 			waitedAuth = true
-			if e.waitTokenChange(3 * time.Second) {
+			if e.waitTokenChange(3*time.Second, usedToken) {
 				continue
 			}
 		}
@@ -1137,7 +1341,7 @@ func (e *Engine) openH2ConnectStreamCC(ctx context.Context, targetAuthority stri
 	return nil, nil, nil, lastErr
 }
 
-func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, *http2.ClientConn, bool, error) {
+func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, *http2.ClientConn, bool, string, error) {
 	// Time-box only session establishment (TCP dial + TLS handshake).
 	// The request itself keeps the caller's context: cancelling it would
 	// tear down the live stream.
@@ -1145,7 +1349,7 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 	cc, token, err := e.ensureH2Session(dialCtx)
 	dialCancel()
 	if err != nil {
-		return nil, nil, nil, false, err
+		return nil, nil, nil, false, "", err
 	}
 
 	pr, pw := io.Pipe()
@@ -1174,23 +1378,12 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 		var streamErr http2.StreamError
 		if !errors.As(err, &streamErr) {
 			if isClosedConnErr(err) {
-				// Our own eviction/flush closed this session while the
-				// CONNECT was in flight — a casualty of recovery, not a
-				// new failure. Evict just this session (likely already
-				// gone) and let the caller retry; escalating to a pool
-				// flush here is what turned single dead sessions into
-				// eviction storms.
 				e.evictH2Conn(cc)
 			} else {
-				// Genuine transport failure: every pooled session shares
-				// this path, so one corpse indicts them all. Flush the
-				// pool (and the DoH connection riding it) rather than
-				// evicting just this session — the caller's retry then
-				// dials fresh.
 				e.ResetSession()
 			}
 		}
-		return nil, nil, nil, false, err
+		return nil, nil, nil, false, token, err
 	}
 
 	if e.OnQuotaHeaders != nil && resp.Header != nil {
@@ -1201,20 +1394,21 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		authFired := false
+		authPending := false
 		if resp.StatusCode == http.StatusUnauthorized {
-			authFired = e.noteAuthFailure()
+			authPending = e.noteAuthFailure()
 		}
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
 		_ = resp.Body.Close()
 		_ = pw.Close()
-		return nil, nil, nil, authFired, &rejectionError{
+		reqCancel()
+		return nil, nil, nil, authPending, token, &rejectionError{
 			target: targetAuthority,
 			status: resp.StatusCode,
 			body:   string(snippet),
 		}
 	}
-	return resp.Body, pw, cc, false, nil
+	return resp.Body, &cancelWriteCloser{WriteCloser: pw, cancel: reqCancel}, cc, false, token, nil
 }
 
 // ProbeLatency measures the latency to a Fastly proxy node as the total time
@@ -1225,22 +1419,17 @@ func ProbeLatency(ctx context.Context, proxyEndpoint, _ string) (time.Duration, 
 }
 
 // ProbeTLSHandshake returns the full dial+handshake duration, NOT the bare TCP
-// connect RTT. On networks where a local bypass proxy terminates TCP (e.g.
-// fakeDNS setups that hand out local addresses for the proxy hostnames), the
-// TCP RTT only measures the hop to that local proxy and is identical for every
-// node on earth. The TLS handshake, in contrast, runs end-to-end to the real
-// Fastly node (certificate verified against the real hostname), so its total
-// duration tracks the same path the tunnel itself will take — through the
-// local proxy where one exists, direct where none does.
+// connect RTT. Time-boxed to 2.5s so unreachable/filtered nodes do not hold
+// up latency scans.
 func ProbeTLSHandshake(ctx context.Context, proxyEndpoint string) (time.Duration, error) {
 	host, _, err := net.SplitHostPort(proxyEndpoint)
 	if err != nil {
 		return 0, err
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	probeCtx, cancel := context.WithTimeout(ctx, 2500*time.Millisecond)
 	defer cancel()
 
-	dialer := &net.Dialer{Timeout: 4 * time.Second}
+	dialer := &net.Dialer{Timeout: 2500 * time.Millisecond}
 	start := time.Now()
 	rawConn, err := dialer.DialContext(probeCtx, "tcp", proxyEndpoint)
 	if err != nil {

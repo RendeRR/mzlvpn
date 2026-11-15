@@ -881,3 +881,96 @@ func TestParseSocksAddrBytes(t *testing.T) {
 		t.Fatal("truncated ipv4 must error")
 	}
 }
+
+// TestConcurrentAuth401AllStreamsWaitAndSucceed verifies that when a burst
+// of parallel streams hits an expired token (401) at the same millisecond,
+// OnAuthFailure fires only once (debounced), and EVERY concurrent stream
+// waits on the broadcast channel for the new token instead of failing.
+func TestConcurrentAuth401AllStreamsWaitAndSucceed(t *testing.T) {
+	proxy := startTestProxy(t)
+	e, _ := startTestEngine(t, proxy)
+	proxy.mu.Lock()
+	proxy.unauthFresh["93.184.216.34:80"] = true
+	proxy.mu.Unlock()
+	e.UpdateToken("stale-token")
+
+	var refreshCalls int
+	var refreshMu sync.Mutex
+	e.OnAuthFailure = func() {
+		refreshMu.Lock()
+		refreshCalls++
+		refreshMu.Unlock()
+		go func() {
+			time.Sleep(120 * time.Millisecond)
+			e.UpdateToken("fresh-token")
+		}()
+	}
+
+	const parallel = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, parallel)
+	for i := 0; i < parallel; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rc, wc, err := e.openH2ConnectStream(context.Background(), "93.184.216.34:80")
+			if err != nil {
+				errs <- err
+				return
+			}
+			_ = wc.Close()
+			_ = rc.Close()
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("parallel stream failed during 401 token refresh: %v", err)
+	}
+	refreshMu.Lock()
+	calls := refreshCalls
+	refreshMu.Unlock()
+	if calls != 1 {
+		t.Fatalf("OnAuthFailure called %d times, want 1", calls)
+	}
+}
+
+// TestSynthesizeEmptyAAAA verifies that IPv6 AAAA queries (QTYPE=28) are
+// answered locally with NOERROR and ANCOUNT=0 without hitting upstream DoH.
+func TestSynthesizeEmptyAAAA(t *testing.T) {
+	proxy := startTestProxy(t)
+	e, _ := startTestEngine(t, proxy)
+
+	// Build a standard DNS AAAA query (QTYPE=28, QCLASS=1) for example.com
+	aaaa := []byte{0xab, 0xcd, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	aaaa = append(aaaa, 7)
+	aaaa = append(aaaa, "example"...)
+	aaaa = append(aaaa, 3)
+	aaaa = append(aaaa, "com"...)
+	aaaa = append(aaaa, 0, 0, 28, 0, 1) // QTYPE=28 (AAAA), QCLASS=1 (IN)
+
+	resp, err := e.forwardDNS(aaaa)
+	if err != nil {
+		t.Fatalf("forwardDNS(AAAA) failed: %v", err)
+	}
+	if len(resp) != len(aaaa) {
+		t.Fatalf("resp len = %d, want %d", len(resp), len(aaaa))
+	}
+	if resp[0] != 0xab || resp[1] != 0xcd {
+		t.Fatalf("TXID mismatch: %x %x", resp[0], resp[1])
+	}
+	flags := binary.BigEndian.Uint16(resp[2:4])
+	if (flags&0x8000) == 0 || (flags&0x000f) != 0 {
+		t.Fatalf("expected QR=1 and RCODE=0 (NOERROR), got flags=0x%04x", flags)
+	}
+	anCount := binary.BigEndian.Uint16(resp[6:8])
+	if anCount != 0 {
+		t.Fatalf("expected ANCOUNT=0, got %d", anCount)
+	}
+	proxy.mu.Lock()
+	hits := proxy.dohHits
+	proxy.mu.Unlock()
+	if hits != 0 {
+		t.Fatalf("AAAA query should be synthesized locally, but dohHits = %d", hits)
+	}
+}

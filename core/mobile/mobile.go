@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"mozillavpnlite/core/accounts"
@@ -23,6 +24,8 @@ import (
 
 var (
 	mu           sync.Mutex
+	refreshMu    sync.Mutex
+	reconnectRun atomic.Bool
 	pool         *accounts.Pool
 	engine       = tunnel.NewEngine()
 	locations    = serverlist.DefaultLocations()
@@ -106,10 +109,19 @@ func Start(dataDir string, autoConnect bool, language string) error {
 		list, fetchErr := serverlist.Fetch(ctx)
 		cancel()
 		if fetchErr == nil && len(list) > 0 {
-			pingCtx, pingCancel := context.WithTimeout(context.Background(), 20*time.Second)
-			measured := serverlist.MeasureLatencies(pingCtx, list, func(c context.Context, endpoint string) (time.Duration, error) {
-				return tunnel.ProbeTLSHandshake(c, endpoint)
-			})
+			pingCtx, pingCancel := context.WithTimeout(context.Background(), 12*time.Second)
+			measured := serverlist.MeasureLatenciesProgressive(
+				pingCtx,
+				list,
+				func(c context.Context, endpoint string) (time.Duration, error) {
+					return tunnel.ProbeTLSHandshake(c, endpoint)
+				},
+				func(snap []serverlist.Location) {
+					mu.Lock()
+					locations = snap
+					mu.Unlock()
+				},
+			)
 			pingCancel()
 			mu.Lock()
 			locations = measured
@@ -133,13 +145,16 @@ func Start(dataDir string, autoConnect bool, language string) error {
 }
 
 // refreshEngineToken fetches a fresh ProxyPass for the active account
-// and hot-swaps it into the running engine, logging the outcome (with
-// the new pass's expiry) to the tunnel log. It is the single refresh
+// and hot-swaps it into the running engine. It is the single refresh
 // path for every trigger: a 401 from the proxy (the held token died,
 // typically while the device slept), a wake/network reconnect, and the
 // background refresh after a warm Connect. A tokenless result (Guardian
-// 429 usage-only reply) never overwrites the held token.
+// 429 usage-only reply) never overwrites the held token. Serialized by
+// refreshMu so overlapping triggers never race on Guardian.
 func refreshEngineToken(reason string) {
+	refreshMu.Lock()
+	defer refreshMu.Unlock()
+
 	mu.Lock()
 	p := pool
 	isConn := connected
@@ -288,9 +303,8 @@ func Connect() error {
 
 // probeTunnel exercises the data path right after Connect: one probe
 // CONNECT through the fresh engine. If it fails, everything is flushed
-// and the probe runs once more — the outcome lands in the tunnel log
-// either way, so a dead-on-arrival connection is both healed and
-// explained instead of surfacing as a browser error minutes later.
+// and the probe runs once more, so a dead-on-arrival connection is
+// healed instead of surfacing as a browser error minutes later.
 func probeTunnel() {
 	for attempt := 0; attempt < 2; attempt++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -303,9 +317,15 @@ func probeTunnel() {
 	}
 }
 
-// Reconnect immediately resets the HTTP/2 session when Android switches networks
-// (e.g. Wi-Fi <-> LTE/5G) without waiting for old TCP timeouts.
+// Reconnect refreshes the token and probes the HTTP/2 session when Android switches
+// networks (e.g. Wi-Fi <-> LTE/5G) or wakes on unlock. Coalesced via reconnectRun so
+// back-to-back NetworkCallback + ACTION_USER_PRESENT events do not pile up.
 func Reconnect() {
+	if !reconnectRun.CompareAndSwap(false, true) {
+		return
+	}
+	defer reconnectRun.Store(false)
+
 	// Always refresh the pass on a wake/network reconnect, not only
 	// when the stored pass looks stale: the engine's held token can be
 	// older than the stored one, and a pass that dies while the device
@@ -320,7 +340,7 @@ func Reconnect() {
 	// chkip getting a different IP on every refresh for ~8 s after
 	// each unlock). Probe the current pool; reset only when the
 	// probe proves it dead.
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	err := engine.Probe(ctx)
 	cancel()
 	if err == nil {
@@ -596,18 +616,28 @@ func SetLocation(countryCode string) {
 	engine.SwitchServer(loc.Endpoint())
 }
 
-// PingAllLocations measures real 1-RTT latency across all Mozilla locations.
+// PingAllLocations measures real 1-RTT latency across all Mozilla locations,
+// updating the sorted list progressively as each Fastly node responds.
 func PingAllLocations() error {
 	mu.Lock()
 	list := append([]serverlist.Location(nil), locations...)
 	mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 	defer cancel()
 
-	measured := serverlist.MeasureLatencies(ctx, list, func(c context.Context, endpoint string) (time.Duration, error) {
-		return tunnel.ProbeTLSHandshake(c, endpoint)
-	})
+	measured := serverlist.MeasureLatenciesProgressive(
+		ctx,
+		list,
+		func(c context.Context, endpoint string) (time.Duration, error) {
+			return tunnel.ProbeTLSHandshake(c, endpoint)
+		},
+		func(snap []serverlist.Location) {
+			mu.Lock()
+			locations = snap
+			mu.Unlock()
+		},
+	)
 
 	mu.Lock()
 	locations = measured

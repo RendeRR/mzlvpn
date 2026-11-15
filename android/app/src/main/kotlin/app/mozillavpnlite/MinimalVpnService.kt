@@ -94,6 +94,7 @@ class MinimalVpnService : VpnService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            startGeneration.incrementAndGet()
             isRunning = false
             isStarting = false
             VpnWidgetViews.refresh(applicationContext)
@@ -109,6 +110,15 @@ class MinimalVpnService : VpnService() {
             stopSelf()
             return START_NOT_STICKY
         }
+
+        if (intent?.action == ACTION_REFRESH_NOTIF) {
+            if (isRunning) {
+                updateForegroundStatusNotification()
+            }
+            return START_STICKY
+        }
+
+        val myGen = startGeneration.incrementAndGet()
 
         // Must call startForeground immediately on the main thread to avoid Android ANR
         ensureNotificationChannel()
@@ -130,12 +140,21 @@ class MinimalVpnService : VpnService() {
             try {
                 startCore(this, on = false)
                 mobile.Mobile.connect()
-                val socksPort = mobile.Mobile.socksPort().toInt()
-                if (socksPort > 0) {
-                    tunnelUp = establishTunnel(socksPort)
+                if (startGeneration.get() == myGen) {
+                    val socksPort = mobile.Mobile.socksPort().toInt()
+                    if (socksPort > 0) {
+                        tunnelUp = establishTunnel(socksPort)
+                    }
                 }
             } catch (t: Throwable) {
                 android.util.Log.e("MinimalVpnService", "VPN start failed", t)
+            }
+            if (startGeneration.get() != myGen) {
+                // Stop arrived while connect/establish was in flight: tear down any partial state.
+                try {
+                    Tun2Socks.stop()
+                } catch (_: Throwable) {}
+                return@Thread
             }
             isStarting = false
             if (tunnelUp) {
@@ -152,6 +171,7 @@ class MinimalVpnService : VpnService() {
 
     /** Tears everything down after a failed start so no dead state survives. */
     private fun failStop() {
+        startGeneration.incrementAndGet()
         isRunning = false
         isStarting = false
         VpnWidgetViews.refresh(applicationContext)
@@ -315,6 +335,7 @@ class MinimalVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        startGeneration.incrementAndGet()
         isRunning = false
         isStarting = false
         VpnWidgetViews.refresh(applicationContext)
@@ -330,8 +351,11 @@ class MinimalVpnService : VpnService() {
 
     companion object {
         const val ACTION_STOP = "app.mozillavpnlite.STOP"
+        const val ACTION_REFRESH_NOTIF = "app.mozillavpnlite.REFRESH_NOTIF"
         private const val CHANNEL_ID = "mozilla_vpn_lite_status"
         private const val NOTIFICATION_ID = 1001
+
+        private val startGeneration = java.util.concurrent.atomic.AtomicInteger(0)
 
         @Volatile
         var isRunning = false
@@ -368,6 +392,17 @@ class MinimalVpnService : VpnService() {
                 action = ACTION_STOP
             }
             context.applicationContext.startService(intent)
+        }
+
+        fun refreshNotification(context: Context?) {
+            val ctx = context?.applicationContext ?: return
+            if (!isRunning) return
+            try {
+                val intent = Intent(ctx, MinimalVpnService::class.java).apply {
+                    action = ACTION_REFRESH_NOTIF
+                }
+                ctx.startService(intent)
+            } catch (_: Throwable) {}
         }
     }
 }
