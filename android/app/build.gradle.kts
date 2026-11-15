@@ -1,3 +1,5 @@
+import java.net.URL
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -116,7 +118,7 @@ tasks.register("fetchDesignFonts") {
             if (!out.exists() || out.length() == 0L) {
                 out.parentFile.mkdirs()
                 try {
-                    java.net.URL(url).openStream().use { input ->
+                    URL(url).openStream().use { input ->
                         out.outputStream().use { output -> input.copyTo(output) }
                     }
                     logger.lifecycle("Fetched design font $name (${out.length()} bytes)")
