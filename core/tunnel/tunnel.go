@@ -64,14 +64,15 @@ func (cw countWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func copyZeroAlloc(dst io.Writer, src io.Reader, onBytes func(n int64)) {
+func copyZeroAlloc(dst io.Writer, src io.Reader, onBytes func(n int64)) error {
 	bufPtr := streamBufferPool.Get().(*[]byte)
 	defer streamBufferPool.Put(bufPtr)
 	if onBytes != nil {
-		_, _ = io.CopyBuffer(countWriter{w: dst, onSent: onBytes}, src, *bufPtr)
-	} else {
-		_, _ = io.CopyBuffer(dst, src, *bufPtr)
+		_, err := io.CopyBuffer(countWriter{w: dst, onSent: onBytes}, src, *bufPtr)
+		return err
 	}
+	_, err := io.CopyBuffer(dst, src, *bufPtr)
+	return err
 }
 
 func configureLowLatencyTCP(conn net.Conn) {
@@ -101,6 +102,7 @@ type Engine struct {
 	dohMu          sync.Mutex
 	dohConn        *tls.Conn
 	dohReader      *bufio.Reader
+	dohCC          *http2.ClientConn // session serving dohConn's stream
 	watchStop      chan struct{}
 	watchDone      chan struct{}
 	tickMu         sync.Mutex
@@ -324,7 +326,7 @@ func (e *Engine) handleSocks5(client net.Conn) {
 		// The stream context is Background: an H2 stream must live as long
 		// as the TCP connection it carries (only dialing is time-boxed,
 		// inside openH2ConnectStream).
-		streamReader, streamWriter, err := e.openH2ConnectStream(context.Background(), authority)
+		streamReader, streamWriter, cc, err := e.openH2ConnectStreamCC(context.Background(), authority)
 		if err != nil {
 			writeSocksReply(client, 0x05) // connection refused
 			return
@@ -335,7 +337,7 @@ func (e *Engine) handleSocks5(client net.Conn) {
 			return
 		}
 		_ = client.SetDeadline(time.Time{})
-		e.relayTCPStream(client, streamReader, streamWriter)
+		e.relayTCPStream(client, cc, streamReader, streamWriter)
 
 	case 0x05: // hev-socks5-tunnel FWD_UDP (udp: 'tcp') — HevSocks5UDPHdr framing
 		if err := writeSocksReply(client, 0x00); err != nil {
@@ -391,15 +393,57 @@ func readSocksAddr(r io.Reader, atyp byte) (string, uint16, error) {
 	return host, binary.BigEndian.Uint16(portBuf[:]), nil
 }
 
+// streamProbe records how an upstream stream ended: bytes delivered and
+// the first read error. The relay needs both to tell a dead session from
+// a stream that simply finished.
+type streamProbe struct {
+	r     io.Reader
+	bytes int64
+	err   error
+}
+
+func (p *streamProbe) Read(b []byte) (int, error) {
+	n, err := p.r.Read(b)
+	p.bytes += int64(n)
+	if err != nil && p.err == nil {
+		p.err = err
+	}
+	return n, err
+}
+
 // relayTCPStream pumps bytes between the local SOCKS client and an already
 // established H2 CONNECT stream in both directions.
-func (e *Engine) relayTCPStream(client net.Conn, streamReader io.ReadCloser, streamWriter io.WriteCloser) {
+//
+// It is also the pool's mid-stream health check. A session whose path
+// died (sleep, network switch) often still establishes streams — the
+// proxy answers CONNECT — and only resets them mid-flight, which the
+// browser reports as ERR_CONNECTION_RESET while the establishment path
+// sees nothing wrong. So: if the upstream read fails before a single
+// byte was delivered, or fails with a connection-level error at any
+// point, the serving session is evicted; the next connection then dials
+// a fresh one instead of re-entering the same corpse. A clean EOF after
+// data, or a stream-scoped reset after data, leaves the session alone.
+func (e *Engine) relayTCPStream(client net.Conn, cc *http2.ClientConn, streamReader io.ReadCloser, streamWriter io.WriteCloser) {
 	onBytes := e.OnTrafficBytes
 	go func() {
-		copyZeroAlloc(streamWriter, client, onBytes)
+		_ = copyZeroAlloc(streamWriter, client, onBytes)
 		_ = streamWriter.Close()
 	}()
-	copyZeroAlloc(client, streamReader, onBytes)
+	probe := &streamProbe{r: streamReader}
+	_ = copyZeroAlloc(client, probe, onBytes)
+	if probe.err == nil || cc == nil {
+		return
+	}
+	if probe.bytes == 0 {
+		e.evictH2Conn(cc)
+		return
+	}
+	if !errors.Is(probe.err, io.EOF) {
+		var streamErr http2.StreamError
+		if !errors.As(probe.err, &streamErr) {
+			e.evictH2Conn(cc)
+		}
+	}
 }
 
 // handleHevUDPInTCP handles hev-socks5-tunnel's UDP-in-TCP framing for
@@ -553,32 +597,41 @@ func (e *Engine) forwardDNSOverHTTPS(dnsQuery []byte) ([]byte, error) {
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		if e.dohConn == nil {
-			conn, err := e.dialDoH()
+			conn, cc, err := e.dialDoH()
 			if err != nil {
 				return nil, err
 			}
 			e.dohConn = conn
 			e.dohReader = bufio.NewReader(conn)
+			e.dohCC = cc
 		}
 		resp, err := e.dohRoundTripBounded(e.dohConn, e.dohReader, dnsQuery)
 		if err == nil {
 			return resp, nil
 		}
 		lastErr = err
+		deadCC := e.dohCC
 		e.closeDoHLocked()
+		e.dohCC = nil
+		if deadCC != nil {
+			// The session that carried the failed DoH stream is as much
+			// a suspect as the stream: evict it so the redial (and the
+			// DNS-over-TCP fallback) do not re-enter the same corpse.
+			e.evictH2Conn(deadCC)
+		}
 	}
 	return nil, lastErr
 }
 
-func (e *Engine) dialDoH() (*tls.Conn, error) {
+func (e *Engine) dialDoH() (*tls.Conn, *http2.ClientConn, error) {
 	// The H2 stream must outlive this call (it backs the pooled DoH
 	// connection), so it is opened with Background: openH2ConnectStream
 	// binds the stream to the caller's context, and cancelling that
 	// context would tear the stream down. Only the TLS handshake gets
 	// its own short-lived context.
-	rc, wc, err := e.openH2ConnectStream(context.Background(), "1.1.1.1:443")
+	rc, wc, cc, err := e.openH2ConnectStreamCC(context.Background(), "1.1.1.1:443")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	raw := &streamConn{Reader: rc, Writer: wc, rc: rc, wc: wc}
 	cfg := &tls.Config{
@@ -597,9 +650,9 @@ func (e *Engine) dialDoH() (*tls.Conn, error) {
 	defer hsCancel()
 	if err := tlsConn.HandshakeContext(hsCtx); err != nil {
 		_ = raw.Close()
-		return nil, err
+		return nil, nil, err
 	}
-	return tlsConn, nil
+	return tlsConn, cc, nil
 }
 
 // dohExchangeTimeout bounds one DoH request/response exchange. The DoH
@@ -859,26 +912,35 @@ func (e *Engine) evictH2Conn(cc *http2.ClientConn) {
 // openH2ConnectStream opens an HTTP/2 CONNECT tunnel stream to targetAuthority.
 // Uses URL.Opaque = targetAuthority and Host = targetAuthority so golang.org/x/net/http2
 // sends `:method = CONNECT` and `:authority = targetAuthority` (without :scheme/:path).
-//
-// A transport-level failure is retried once: the first attempt evicts the
-// (presumed dead) pooled session, so the retry runs on a fresh one. That
-// turns a network switch from "no internet until a manual VPN restart"
-// into a single slightly slow connection.
 func (e *Engine) openH2ConnectStream(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, error) {
-	rc, wc, err := e.openH2ConnectStreamOnce(ctx, targetAuthority)
+	rc, wc, _, err := e.openH2ConnectStreamCC(ctx, targetAuthority)
+	return rc, wc, err
+}
+
+// openH2ConnectStreamCC is openH2ConnectStream that also reports which
+// pooled session serves the stream, so callers can blame mid-stream
+// failures on the right session (see relayTCPStream).
+//
+// A transport-level failure is retried once: the first attempt flushes
+// the whole pool (every session shares the dead path), so the retry
+// runs on a guaranteed-fresh session. That turns a network switch from
+// "no internet until a manual VPN restart" into a single slightly slow
+// connection.
+func (e *Engine) openH2ConnectStreamCC(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, *http2.ClientConn, error) {
+	rc, wc, cc, err := e.openH2ConnectStreamOnce(ctx, targetAuthority)
 	if err == nil {
-		return rc, wc, nil
+		return rc, wc, cc, nil
 	}
 	var streamErr http2.StreamError
 	if errors.As(err, &streamErr) {
 		// Stream-scoped refusal (e.g. REFUSED_STREAM): the session itself
 		// is healthy and the caller must see the refusal as-is.
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	return e.openH2ConnectStreamOnce(ctx, targetAuthority)
 }
 
-func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, error) {
+func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, *http2.ClientConn, error) {
 	// Time-box only session establishment (TCP dial + TLS handshake).
 	// The request itself keeps the caller's context: cancelling it would
 	// tear down the live stream.
@@ -886,7 +948,7 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 	cc, token, err := e.ensureH2Session(dialCtx)
 	dialCancel()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	pr, pw := io.Pipe()
@@ -914,9 +976,13 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 		_ = pw.Close()
 		var streamErr http2.StreamError
 		if !errors.As(err, &streamErr) {
-			e.evictH2Conn(cc)
+			// Transport-level failure: every pooled session shares this
+			// path, so one corpse indicts them all. Flush the pool (and
+			// the DoH connection riding it) rather than evicting just
+			// this session — the caller's retry then dials fresh.
+			e.ResetSession()
 		}
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if e.OnQuotaHeaders != nil && resp.Header != nil {
@@ -931,11 +997,11 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 		_ = resp.Body.Close()
 		_ = pw.Close()
 		if len(snippet) > 0 {
-			return nil, nil, fmt.Errorf("CONNECT %s rejected HTTP %d: %s", targetAuthority, resp.StatusCode, snippet)
+			return nil, nil, nil, fmt.Errorf("CONNECT %s rejected HTTP %d: %s", targetAuthority, resp.StatusCode, snippet)
 		}
-		return nil, nil, fmt.Errorf("CONNECT %s rejected HTTP %d", targetAuthority, resp.StatusCode)
+		return nil, nil, nil, fmt.Errorf("CONNECT %s rejected HTTP %d", targetAuthority, resp.StatusCode)
 	}
-	return resp.Body, pw, nil
+	return resp.Body, pw, cc, nil
 }
 
 // ProbeLatency measures the latency to a Fastly proxy node as the total time

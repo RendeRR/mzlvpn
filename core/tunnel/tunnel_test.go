@@ -52,6 +52,15 @@ type testProxy struct {
 	connCount     int
 	hangFirstConn bool
 	hangDoH       bool
+	conns         []net.Conn
+}
+
+func (p *testProxy) killConn(idx int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if idx < len(p.conns) {
+		_ = p.conns[idx].Close()
+	}
 }
 
 func startTestProxy(t *testing.T) *testProxy {
@@ -199,6 +208,7 @@ func startTestProxy(t *testing.T) *testProxy {
 			p.mu.Lock()
 			idx := p.connCount
 			p.connCount++
+			p.conns = append(p.conns, conn)
 			p.mu.Unlock()
 			go func() {
 				// http2.Server.ServeConn requires the TLS handshake (and thus
@@ -451,6 +461,59 @@ func TestSuspensionCheckResetsPool(t *testing.T) {
 	}
 	if poolLen() != 0 {
 		t.Fatalf("pool = %d after suspension, want 0", poolLen())
+	}
+}
+
+// TestMidStreamDeathEvictsSession models the post-sleep failure where
+// the session still establishes streams but they die mid-flight (the
+// browser's ERR_CONNECTION_RESET): after the stream breaks, the next
+// connection must land on a fresh session, not re-enter the corpse.
+func TestMidStreamDeathEvictsSession(t *testing.T) {
+	proxy := startTestProxy(t)
+	_, port := startTestEngine(t, proxy)
+
+	conn := dialSocks(t, port)
+	socksGreeting(t, conn)
+	if rep := socksRequest(t, conn, 0x01, net.ParseIP("93.184.216.34"), 80); rep != 0x00 {
+		t.Fatalf("CONNECT rep = %d, want 0x00", rep)
+	}
+	msg := []byte("hello-vpn")
+	if _, err := conn.Write(msg); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]byte, len(msg))
+	if _, err := io.ReadFull(conn, got); err != nil {
+		t.Fatal(err)
+	}
+
+	// The session's path dies mid-stream.
+	proxy.killConn(0)
+
+	// The open stream must break: the relay ends and the handler tears
+	// the SOCKS connection down.
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, err := conn.Read(make([]byte, 1)); err == nil {
+		t.Fatal("stream must break after the session's death")
+	}
+	_ = conn.Close()
+
+	// The next connection recovers on a fresh session.
+	conn2 := dialSocks(t, port)
+	socksGreeting(t, conn2)
+	if rep := socksRequest(t, conn2, 0x01, net.ParseIP("93.184.216.34"), 80); rep != 0x00 {
+		t.Fatalf("CONNECT after mid-stream death rep = %d, want 0x00", rep)
+	}
+	if _, err := conn2.Write(msg); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(conn2, got); err != nil {
+		t.Fatalf("echo after recovery: %v", err)
+	}
+	proxy.mu.Lock()
+	conns := proxy.connCount
+	proxy.mu.Unlock()
+	if conns != 2 {
+		t.Fatalf("proxy saw %d connections, want 2 (corpse + fresh)", conns)
 	}
 }
 
