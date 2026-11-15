@@ -1716,32 +1716,28 @@ private fun AccountsTabScreen(
                     .padding(15.dp),
                 verticalArrangement = Arrangement.spacedBy(11.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.Top
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { onSelectAccount(idx) },
-                        verticalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Box(modifier = Modifier.clickable { onSelectAccount(idx) }) {
                         AccountPlateHeader(acc = acc, isActive = isActive)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
                             text = if (isActive) "АКТИВНЫЙ ПРОФИЛЬ" else if (acc.exhausted) "В РЕЗЕРВЕ ДО СБРОСА" else "В ОЧЕРЕДИ РОТАЦИИ",
                             color = InkSoft,
                             fontSize = 11.sp,
                             fontFamily = PriborFonts.mono(FontWeight.Normal),
-                            letterSpacing = 1.sp
+                            letterSpacing = 1.sp,
+                            modifier = Modifier.weight(1f)
                         )
-                    }
-
-                    if (!isActive) {
-                        SmallPlateButton(
-                            text = "ВКЛЮЧИТЬ",
-                            onClick = { onSelectAccount(idx) }
-                        )
+                        if (!isActive) {
+                            SmallPlateButton(
+                                text = "ВКЛЮЧИТЬ",
+                                onClick = { onSelectAccount(idx) }
+                            )
+                        }
                     }
                 }
 
