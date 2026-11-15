@@ -19,7 +19,8 @@
     android:background="@drawable/widget_bg"
     android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:padding="10dp">
+    android:paddingHorizontal="8dp"
+    android:paddingVertical="10dp">
 
     <TextView
         android:id="@+id/widget_square"
@@ -33,12 +34,13 @@
         android:id="@+id/widget_state"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
+        android:layout_marginStart="6dp"
         android:layout_weight="1"
         android:fontFamily="monospace"
+        android:maxLines="1"
         android:text="@string/state_off"
         android:textColor="@color/pribor_ink"
-        android:textSize="15sp"
+        android:textSize="13sp"
         android:textStyle="bold" />
 
     <TextView
@@ -49,7 +51,7 @@
         android:background="@drawable/widget_btn_signal"
         android:fontFamily="monospace"
         android:gravity="center"
-        android:paddingHorizontal="16dp"
+        android:paddingHorizontal="12dp"
         android:paddingVertical="8dp"
         android:text="@string/widget_btn_on"
         android:textColor="@color/pribor_paper"
