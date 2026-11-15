@@ -156,7 +156,7 @@ func (e *Engine) startWatchdogLocked() {
 	done := make(chan struct{})
 	e.watchStop, e.watchDone = stop, done
 	e.tickMu.Lock()
-	e.lastTick = time.Now()
+	e.lastTick = time.Now().Round(0)
 	e.tickMu.Unlock()
 	go e.watchdogLoop(stop, done)
 }
@@ -182,6 +182,15 @@ func (e *Engine) watchdogLoop(stop, done chan struct{}) {
 // callback fires when the device wakes on the same network, so nothing
 // else would ever drop them. Detection resets the session.
 func (e *Engine) suspensionCheck(now time.Time) bool {
+	// The gap MUST be measured on the wall clock: Go's monotonic
+	// reading (which Sub would prefer) rides CLOCK_MONOTONIC, and that
+	// clock freezes while the system is suspended — a monotonic gap
+	// across a night's sleep reads as ~0 and the suspension would never
+	// be detected. Round(0) strips the monotonic reading from both
+	// operands, so Sub compares wall time, which the RTC advances
+	// through suspend. A user/NTP clock change can cause a false
+	// positive; it costs one harmless session reset.
+	now = now.Round(0)
 	e.tickMu.Lock()
 	if e.lastTick.IsZero() {
 		e.lastTick = now
