@@ -18,14 +18,18 @@ import org.json.JSONObject
  */
 class VpnWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        // DIAGNOSTIC (2026-11-15): the full «Прибор» widget shows
+        // "Can't load widget" on the user's device in two different
+        // launchers, although the shipped APK's manifest, provider
+        // info and compiled layout all verify clean with aapt2.
+        // Serve the bare-minimum diagnostic layout (one TextView,
+        // zero resource references) to bisect the failure: if this
+        // renders, the fancy layout or one of its resources is the
+        // culprit; if it still fails, the fault is in provider
+        // delivery/registration itself. VpnWidgetViews (the service's
+        // state pushes) is intentionally bypassed here.
+        val views = RemoteViews(context.packageName, R.layout.widget_diag)
         for (id in ids) {
-            val views = try {
-                VpnWidgetViews.build(context)
-            } catch (_: Throwable) {
-                // Never leave the launcher with nothing: the bare
-                // layout (static texts) is the last-resort frame.
-                RemoteViews(context.packageName, R.layout.widget_toggle)
-            }
             manager.updateAppWidget(id, views)
         }
     }

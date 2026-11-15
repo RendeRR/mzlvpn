@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DIAGNOSTIC layout (2026-11-15): the absolute minimum a widget can
+     be — one container, one TextView, literal text, and NOT A SINGLE
+     resource reference (no @string/@color/@drawable/font). Served by
+     VpnWidgetProvider while we bisect why the full «Прибор» layout
+     shows "Can't load widget" on the user's device despite compiling
+     and verifying clean. If this renders, the fancy layout or one of
+     its resources is the culprit; if it does not, the fault is in
+     provider delivery/registration, not in resources at all. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="MZLVPN DIAG" />
+</LinearLayout>
