@@ -61,12 +61,13 @@ class MinimalVpnService : VpnService() {
 
     // Unlocking the phone is the one wake signal that needs no
     // heuristics: whatever silently died while the device slept (server
-    // reaped the idle session, NAT state aged out), the pooled sessions
-    // are dropped and the next connection dials fresh. The core's
-    // suspension watchdog only sees freezes long enough to starve its
-    // ticks — light sleep with brief maintenance wakes slips under it,
-    // while the upstream session dies all the same. Cost of a false
-    // alarm: one H2 redial on the first connection after unlock.
+    // reaped the idle session, NAT state aged out) gets healed. The
+    // core's suspension watchdog only sees freezes long enough to
+    // starve its ticks — light sleep with brief maintenance wakes
+    // slips under it, while the upstream session dies all the same.
+    // Mobile.reconnect probes the pooled sessions first and resets
+    // only when they are provably dead, so a seconds-long screen-off
+    // no longer costs a redial burst and a new egress IP.
     private val userPresentReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (isRunning) reconnectCore()

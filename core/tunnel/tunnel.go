@@ -114,6 +114,8 @@ type Engine struct {
 	lastAuthFail   time.Time
 	rejectMu       sync.Mutex
 	lastReject     map[string]time.Time
+	deathMu        sync.Mutex
+	preDataDeaths  map[*http2.ClientConn]int
 	OnTrafficBytes func(deltaBytes int64)
 	OnQuotaHeaders func(h http.Header)
 	OnQuotaExhaust func()
@@ -325,6 +327,39 @@ func (e *Engine) noteAuthFailure() bool {
 	return cb != nil
 }
 
+// notePreDataDeath records a stream that died on cc before delivering
+// a single byte, and reports whether the session has now earned
+// eviction (two consecutive strikes). One pre-data death is weak
+// evidence: the proxy sometimes sheds a single stream (target
+// unreachable after the 200, stream-level load shedding) while the
+// session itself is healthy — evicting on the first strike turned
+// every post-unlock hiccup into a redial burst and a new egress IP
+// per retry. A genuinely reaped session fails every stream, so the
+// second strike lands within a second.
+func (e *Engine) notePreDataDeath(cc *http2.ClientConn) bool {
+	e.deathMu.Lock()
+	defer e.deathMu.Unlock()
+	if e.preDataDeaths == nil {
+		e.preDataDeaths = make(map[*http2.ClientConn]int)
+	}
+	e.preDataDeaths[cc]++
+	return e.preDataDeaths[cc] >= 2
+}
+
+// noteSessionAlive clears cc's pre-data death strikes: a stream on
+// this session delivered data, so the session is demonstrably alive.
+func (e *Engine) noteSessionAlive(cc *http2.ClientConn) {
+	e.deathMu.Lock()
+	delete(e.preDataDeaths, cc)
+	e.deathMu.Unlock()
+}
+
+func (e *Engine) forgetSessionDeaths(cc *http2.ClientConn) {
+	e.deathMu.Lock()
+	delete(e.preDataDeaths, cc)
+	e.deathMu.Unlock()
+}
+
 // rejectionError is an HTTP-level refusal from the proxy (a non-2xx
 // CONNECT response): an authoritative answer, not a transport
 // failure — the session that carried it is healthy and stays pooled.
@@ -412,6 +447,9 @@ func (e *Engine) Probe(ctx context.Context) error {
 // woke on a silently-dead path — so the next packet dials immediately.
 func (e *Engine) ResetSession() {
 	e.logDiag("session reset")
+	e.deathMu.Lock()
+	e.preDataDeaths = nil
+	e.deathMu.Unlock()
 	e.mu.Lock()
 	e.closeH2Locked()
 	e.mu.Unlock()
@@ -626,9 +664,16 @@ func (e *Engine) relayTCPStream(client net.Conn, cc *http2.ClientConn, authority
 		// do not log it as an eviction; that feedback loop is the storm.
 		return
 	}
+	if probe.bytes > 0 {
+		e.noteSessionAlive(cc)
+	}
 	if probe.bytes == 0 {
-		e.logDiag("stream %s died before data (%v) — session evicted", authority, probe.err)
-		e.evictH2Conn(cc)
+		if e.notePreDataDeath(cc) {
+			e.logDiag("stream %s died before data (%v) — session evicted", authority, probe.err)
+			e.evictH2Conn(cc)
+		} else {
+			e.logDiag("stream %s died before data (%v) — session kept (strike 1)", authority, probe.err)
+		}
 		return
 	}
 	if !errors.Is(probe.err, io.EOF) {
@@ -1123,6 +1168,7 @@ func (e *Engine) evictH2Conn(cc *http2.ClientConn) {
 	}
 	e.h2Pool = kept
 	e.mu.Unlock()
+	e.forgetSessionDeaths(cc)
 }
 
 // openH2ConnectStream opens an HTTP/2 CONNECT tunnel stream to targetAuthority.

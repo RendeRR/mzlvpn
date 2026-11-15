@@ -329,13 +329,29 @@ func probeTunnel() {
 // (e.g. Wi-Fi <-> LTE/5G) without waiting for old TCP timeouts.
 func Reconnect() {
 	engine.LogEvent("reconnect requested")
-	engine.ResetSession()
 	// Always refresh the pass on a wake/network reconnect, not only
 	// when the stored pass looks stale: the engine's held token can be
 	// older than the stored one, and a pass that dies while the device
 	// sleeps otherwise keeps meeting CONNECTs with 401 until something
-	// else happens to refresh it.
-	go refreshEngineToken("reconnect")
+	// else happens to refresh it. Synchronous on purpose: the probe
+	// below must not mistake a dead token for a dead session.
+	refreshEngineToken("reconnect")
+	// Verify before resetting. Most reconnect signals — a screen-off
+	// of a few seconds, a network revalidation — leave the pooled
+	// sessions perfectly alive, and a blind reset costs a redial
+	// burst plus a new egress IP for every app (the field log showed
+	// chkip getting a different IP on every refresh for ~8 s after
+	// each unlock). Probe the current pool; reset only when the
+	// probe proves it dead.
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	err := engine.Probe(ctx)
+	cancel()
+	if err == nil {
+		engine.LogEvent("reconnect: session alive — kept")
+		return
+	}
+	engine.LogEvent("reconnect: probe failed (%v) — resetting session", err)
+	engine.ResetSession()
 }
 
 // Disconnect stops the local SOCKS5 tunnel.
