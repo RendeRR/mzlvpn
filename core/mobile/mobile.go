@@ -221,7 +221,11 @@ func Disconnect() {
 	engine.Stop()
 	mu.Lock()
 	connected = false
+	p := pool
 	mu.Unlock()
+	if p != nil {
+		p.Flush()
+	}
 }
 
 // SwitchAccount immediately switches the active Mozilla account and hot-swaps
