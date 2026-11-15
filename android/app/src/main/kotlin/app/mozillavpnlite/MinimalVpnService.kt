@@ -4,8 +4,10 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
@@ -57,6 +59,20 @@ class MinimalVpnService : VpnService() {
         }.start()
     }
 
+    // Unlocking the phone is the one wake signal that needs no
+    // heuristics: whatever silently died while the device slept (server
+    // reaped the idle session, NAT state aged out), the pooled sessions
+    // are dropped and the next connection dials fresh. The core's
+    // suspension watchdog only sees freezes long enough to starve its
+    // ticks — light sleep with brief maintenance wakes slips under it,
+    // while the upstream session dies all the same. Cost of a false
+    // alarm: one H2 redial on the first connection after unlock.
+    private val userPresentReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (isRunning) reconnectCore()
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         ensureNotificationChannel()
@@ -69,6 +85,9 @@ class MinimalVpnService : VpnService() {
                 .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
                 .build()
             connectivityManager?.registerNetworkCallback(request, networkCallback)
+        } catch (_: Exception) {}
+        try {
+            registerReceiver(userPresentReceiver, IntentFilter(Intent.ACTION_USER_PRESENT))
         } catch (_: Exception) {}
     }
 
@@ -288,6 +307,9 @@ class MinimalVpnService : VpnService() {
 
     override fun onDestroy() {
         isRunning = false
+        try {
+            unregisterReceiver(userPresentReceiver)
+        } catch (_: Exception) {}
         try {
             connectivityManager?.unregisterNetworkCallback(networkCallback)
         } catch (_: Exception) {}
