@@ -51,6 +51,7 @@ type testProxy struct {
 	ln            net.Listener
 	connCount     int
 	hangFirstConn bool
+	hangDoH       bool
 }
 
 func startTestProxy(t *testing.T) *testProxy {
@@ -124,6 +125,15 @@ func startTestProxy(t *testing.T) *testProxy {
 			for {
 				req, err := http.ReadRequest(br)
 				if err != nil {
+					return
+				}
+				p.mu.Lock()
+				hang := p.hangDoH
+				p.mu.Unlock()
+				if hang {
+					// Dead path: the request arrived, the answer never
+					// does. Block until the client gives up and closes.
+					<-r.Context().Done()
 					return
 				}
 				body, err := io.ReadAll(req.Body)
@@ -345,6 +355,102 @@ func TestH2CorpseSessionEvictedAndRetried(t *testing.T) {
 	proxy.mu.Unlock()
 	if conns != 2 {
 		t.Fatalf("proxy saw %d connections, want 2 (corpse + fresh)", conns)
+	}
+}
+
+func dnsQueryFixture() []byte {
+	// Header: txid 0x1234, RD set, one question: example.com A IN.
+	q := []byte{0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	q = append(q, 7)
+	q = append(q, "example"...)
+	q = append(q, 3)
+	q = append(q, "com"...)
+	q = append(q, 0, 0, 1, 0, 1)
+	return q
+}
+
+// TestDoHExchangeTimeoutAndRecovery models DNS after the device slept:
+// the DoH connection's path silently died and the server never answers.
+// The exchange must fail within its timeout (not hang forever behind
+// dohMu, taking all DNS with it), and the next query must recover on a
+// fresh connection.
+func TestDoHExchangeTimeoutAndRecovery(t *testing.T) {
+	old := dohExchangeTimeout
+	dohExchangeTimeout = 300 * time.Millisecond
+	defer func() { dohExchangeTimeout = old }()
+
+	proxy := startTestProxy(t)
+	e, _ := startTestEngine(t, proxy)
+	query := dnsQueryFixture()
+
+	proxy.mu.Lock()
+	proxy.hangDoH = true
+	proxy.mu.Unlock()
+
+	start := time.Now()
+	_, err := e.forwardDNSOverHTTPS(query)
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("DoH against a dead path must error, not hang")
+	}
+	if elapsed < dohExchangeTimeout {
+		t.Fatalf("failed after %v — the exchange timeout never governed", elapsed)
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("DoH failure took %v — the timeout is not bounding the hang", elapsed)
+	}
+
+	proxy.mu.Lock()
+	proxy.hangDoH = false
+	proxy.mu.Unlock()
+
+	resp, err := e.forwardDNSOverHTTPS(query)
+	if err != nil {
+		t.Fatalf("DoH after the path recovers: %v", err)
+	}
+	if !bytes.Equal(resp, query) {
+		t.Fatalf("DoH echo mismatch: %v != %v", resp, query)
+	}
+}
+
+// TestSuspensionCheckResetsPool: a wall-clock jump between watchdog
+// ticks means the process was frozen (sleep/Doze); the pooled session
+// must be dropped so the first connection after wake dials fresh.
+func TestSuspensionCheckResetsPool(t *testing.T) {
+	proxy := startTestProxy(t)
+	e, _ := startTestEngine(t, proxy)
+
+	rc, wc, err := e.openH2ConnectStream(context.Background(), "93.184.216.34:80")
+	if err != nil {
+		t.Fatalf("CONNECT: %v", err)
+	}
+	_ = wc.Close()
+	_ = rc.Close()
+
+	poolLen := func() int {
+		e.mu.RLock()
+		defer e.mu.RUnlock()
+		return len(e.h2Pool)
+	}
+	if poolLen() != 1 {
+		t.Fatalf("pool = %d, want 1", poolLen())
+	}
+
+	t0 := time.Now()
+	if e.suspensionCheck(t0) {
+		t.Fatal("an ordinary first tick must not reset")
+	}
+	if e.suspensionCheck(t0.Add(10 * time.Second)) {
+		t.Fatal("a 10 s gap is not a suspension")
+	}
+	if poolLen() != 1 {
+		t.Fatal("pool must survive ordinary ticks")
+	}
+	if !e.suspensionCheck(t0.Add(10 * time.Second).Add(31 * time.Second)) {
+		t.Fatal("a 31 s tick gap must be treated as a suspension")
+	}
+	if poolLen() != 0 {
+		t.Fatalf("pool = %d after suspension, want 0", poolLen())
 	}
 }
 

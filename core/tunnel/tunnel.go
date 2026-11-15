@@ -101,6 +101,10 @@ type Engine struct {
 	dohMu          sync.Mutex
 	dohConn        *tls.Conn
 	dohReader      *bufio.Reader
+	watchStop      chan struct{}
+	watchDone      chan struct{}
+	tickMu         sync.Mutex
+	lastTick       time.Time
 	OnTrafficBytes func(deltaBytes int64)
 	OnQuotaHeaders func(h http.Header)
 	OnQuotaExhaust func()
@@ -129,7 +133,69 @@ func (e *Engine) Start(listenAddr, proxyEndpoint, proxyPassJWT string) (int, err
 		e.listener = ln
 		go e.acceptLoop(ln)
 	}
+	e.startWatchdogLocked()
 	return e.listener.Addr().(*net.TCPAddr).Port, nil
+}
+
+const (
+	// watchdogInterval is how often the suspension watchdog ticks.
+	watchdogInterval = 5 * time.Second
+	// suspensionGap is the tick-to-tick wall-clock jump that can only
+	// mean the process was frozen (device asleep / Doze): normal
+	// scheduling never delays a 5 s ticker by half a minute.
+	suspensionGap = 30 * time.Second
+)
+
+// startWatchdogLocked starts the suspension watchdog if it is not
+// running. Called with e.mu held (from Start).
+func (e *Engine) startWatchdogLocked() {
+	if e.watchStop != nil {
+		return
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	e.watchStop, e.watchDone = stop, done
+	e.tickMu.Lock()
+	e.lastTick = time.Now()
+	e.tickMu.Unlock()
+	go e.watchdogLoop(stop, done)
+}
+
+func (e *Engine) watchdogLoop(stop, done chan struct{}) {
+	defer close(done)
+	ticker := time.NewTicker(watchdogInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case now := <-ticker.C:
+			e.suspensionCheck(now)
+		}
+	}
+}
+
+// suspensionCheck reports whether the process was frozen since the
+// previous tick. On wake from sleep the pooled sessions and the DoH
+// connection all point at a path that silently died — NAT state and
+// server-side sockets do not survive a long sleep — and no network
+// callback fires when the device wakes on the same network, so nothing
+// else would ever drop them. Detection resets the session.
+func (e *Engine) suspensionCheck(now time.Time) bool {
+	e.tickMu.Lock()
+	if e.lastTick.IsZero() {
+		e.lastTick = now
+		e.tickMu.Unlock()
+		return false
+	}
+	gap := now.Sub(e.lastTick)
+	e.lastTick = now
+	e.tickMu.Unlock()
+	if gap > suspensionGap {
+		e.ResetSession()
+		return true
+	}
+	return false
 }
 
 // UpdateToken hot-swaps the active Mozilla account's ProxyPass JWT in 0 ms without dropping the tunnel.
@@ -149,12 +215,17 @@ func (e *Engine) SwitchServer(proxyEndpoint string) {
 	e.mu.Unlock()
 }
 
-// ResetSession immediately drops the pooled TLS 1.3 / HTTP/2 session when Android
-// switches network interfaces (e.g. Wi-Fi <-> LTE/5G) so the next packet dials immediately.
+// ResetSession immediately drops the pooled TLS 1.3 / HTTP/2 sessions and
+// the pooled DoH connection when the path under them is gone — Android
+// switched network interfaces (Wi-Fi <-> LTE/5G), or the device slept and
+// woke on a silently-dead path — so the next packet dials immediately.
 func (e *Engine) ResetSession() {
 	e.mu.Lock()
 	e.closeH2Locked()
 	e.mu.Unlock()
+	e.dohMu.Lock()
+	e.closeDoHLocked()
+	e.dohMu.Unlock()
 }
 
 func (e *Engine) closeH2Locked() {
@@ -168,12 +239,20 @@ func (e *Engine) closeH2Locked() {
 
 func (e *Engine) Stop() {
 	e.mu.Lock()
-	defer e.mu.Unlock()
+	stop, done := e.watchStop, e.watchDone
+	e.watchStop, e.watchDone = nil, nil
 	if e.listener != nil {
 		_ = e.listener.Close()
 		e.listener = nil
 	}
 	e.closeH2Locked()
+	e.mu.Unlock()
+	// Wait for the watchdog outside e.mu: it may be inside a
+	// suspensionCheck -> ResetSession, which needs that lock.
+	if stop != nil {
+		close(stop)
+		<-done
+	}
 }
 
 func (e *Engine) Port() int {
@@ -472,7 +551,7 @@ func (e *Engine) forwardDNSOverHTTPS(dnsQuery []byte) ([]byte, error) {
 			e.dohConn = conn
 			e.dohReader = bufio.NewReader(conn)
 		}
-		resp, err := e.dohRoundTrip(dnsQuery)
+		resp, err := e.dohRoundTripBounded(e.dohConn, e.dohReader, dnsQuery)
 		if err == nil {
 			return resp, nil
 		}
@@ -514,17 +593,51 @@ func (e *Engine) dialDoH() (*tls.Conn, error) {
 	return tlsConn, nil
 }
 
-func (e *Engine) dohRoundTrip(dnsQuery []byte) ([]byte, error) {
+// dohExchangeTimeout bounds one DoH request/response exchange. The DoH
+// connection rides an H2 stream, whose deadlines are no-ops — without
+// this bound, an exchange on a path that silently died (device asleep,
+// network gone) blocks forever; and because every DNS query serializes
+// on dohMu, it takes all of DNS down with it. A var so tests can shrink
+// it.
+var dohExchangeTimeout = 6 * time.Second
+
+type dohResult struct {
+	body []byte
+	err  error
+}
+
+// dohRoundTripBounded runs one DoH exchange with a hard timeout. On
+// expiry it force-closes the connection — the only way to unblock a
+// read/write stuck on the dead stream; the exchange goroutine's late
+// result lands in the buffered channel and is discarded.
+func (e *Engine) dohRoundTripBounded(conn *tls.Conn, reader *bufio.Reader, dnsQuery []byte) ([]byte, error) {
+	done := make(chan dohResult, 1)
+	go func() {
+		body, err := dohRoundTripOn(conn, reader, dnsQuery)
+		done <- dohResult{body: body, err: err}
+	}()
+	timer := time.NewTimer(dohExchangeTimeout)
+	defer timer.Stop()
+	select {
+	case r := <-done:
+		return r.body, r.err
+	case <-timer.C:
+		_ = conn.Close()
+		return nil, errors.New("doh exchange timed out")
+	}
+}
+
+func dohRoundTripOn(conn *tls.Conn, reader *bufio.Reader, dnsQuery []byte) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodPost, "https://cloudflare-dns.com/dns-query", bytes.NewReader(dnsQuery))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/dns-message")
 	req.Header.Set("Accept", "application/dns-message")
-	if err := req.Write(e.dohConn); err != nil {
+	if err := req.Write(conn); err != nil {
 		return nil, err
 	}
-	resp, err := http.ReadResponse(e.dohReader, req)
+	resp, err := http.ReadResponse(reader, req)
 	if err != nil {
 		return nil, err
 	}
