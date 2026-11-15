@@ -1115,26 +1115,21 @@ func resetSessionCache() {
 	sessionCacheMu.Unlock()
 }
 
-// pickH2ConnLocked selects the healthy HTTP/2 session with the fewest
-// active streams, distributing load across the pool when multiple
-// sessions are open.
+// pickH2ConnLocked selects the FIRST healthy HTTP/2 session and sticks
+// to it. Deliberately not least-loaded balancing: each pooled session
+// is a separate connection to the proxy with its own egress IP, so
+// spreading streams across sessions makes the user's public IP flap
+// from request to request (observed in the field 2026-11-16 after a
+// brief least-loaded experiment — sites see a different IP on every
+// page refresh). One sticky session keeps one stable egress IP until
+// the session itself dies or fills up.
 func (e *Engine) pickH2ConnLocked() *http2.ClientConn {
-	var best *http2.ClientConn
-	var bestActive int
 	for _, entry := range e.h2Pool {
-		if entry.cc == nil || !entry.cc.CanTakeNewRequest() {
-			continue
-		}
-		active := entry.cc.State().StreamsActive
-		if best == nil || active < bestActive {
-			best = entry.cc
-			bestActive = active
-			if active == 0 {
-				break
-			}
+		if entry.cc != nil && entry.cc.CanTakeNewRequest() {
+			return entry.cc
 		}
 	}
-	return best
+	return nil
 }
 
 func (e *Engine) ensureH2Session(ctx context.Context) (*http2.ClientConn, string, error) {
@@ -1270,22 +1265,6 @@ func (e *Engine) evictH2Conn(cc *http2.ClientConn) {
 	e.forgetSessionDeaths(cc)
 }
 
-// cancelWriteCloser ensures the per-request context created for
-// connectHeaderTimeout is cancelled when the stream's write half closes,
-// preventing context child leaks on long-running sessions.
-type cancelWriteCloser struct {
-	io.WriteCloser
-	cancel context.CancelFunc
-}
-
-func (c *cancelWriteCloser) Close() error {
-	err := c.WriteCloser.Close()
-	if c.cancel != nil {
-		c.cancel()
-	}
-	return err
-}
-
 // openH2ConnectStream opens an HTTP/2 CONNECT tunnel stream to targetAuthority.
 // Uses URL.Opaque = targetAuthority and Host = targetAuthority so golang.org/x/net/http2
 // sends `:method = CONNECT` and `:authority = targetAuthority` (without :scheme/:path).
@@ -1408,7 +1387,15 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 			body:   string(snippet),
 		}
 	}
-	return resp.Body, &cancelWriteCloser{WriteCloser: pw, cancel: reqCancel}, cc, false, token, nil
+	// The request context is deliberately NOT cancelled when the stream
+	// closes (reqCancel lives until the parent context ends): in
+	// x/net/http2, cancelling a live stream's context resets the stream,
+	// and the write half can close before the response has finished —
+	// a cancel-on-close wrapper (tried and reverted 2026-11-16, when
+	// the egress IP changed on every page refresh) risks resetting
+	// healthy streams and churning sessions. The timer above already
+	// bounds the only phase the context exists for, the header wait.
+	return resp.Body, pw, cc, false, token, nil
 }
 
 // ProbeLatency measures the latency to a Fastly proxy node as the total time
