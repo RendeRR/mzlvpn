@@ -19,6 +19,18 @@ android {
         }
     }
 
+    // Two release APKs: a small arm64-v8a build for modern 64-bit phones
+    // (Pixel and almost everything recent) and a universal build carrying
+    // every ABI from ndk.abiFilters for anything else.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a")
+            isUniversalApk = true
+        }
+    }
+
     externalNativeBuild {
         ndkBuild {
             // Vendored hev-socks5-tunnel (see android/third_party/README.md).
@@ -33,7 +45,7 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = 100 + ciRunNumber
-        versionName = "1.0.$ciRunNumber-lite"
+        versionName = "1.0.$ciRunNumber"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
