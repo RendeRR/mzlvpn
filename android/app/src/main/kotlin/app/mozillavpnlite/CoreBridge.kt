@@ -41,7 +41,8 @@ data class CoreSnapshot(
     val activeAccount: Int = 0,
     val thresholdPct: Int = 95,
     val accounts: List<AccountItem> = emptyList(),
-    val locations: List<LocationItem> = emptyList()
+    val locations: List<LocationItem> = emptyList(),
+    val tunnelLog: List<String> = emptyList()
 )
 
 object CoreBridge {
@@ -203,6 +204,9 @@ object CoreBridge {
                 }
             }
 
+            val logArr = root.optJSONArray("tunnel_log") ?: JSONArray()
+            val tunnelLog = (0 until logArr.length()).map { logArr.optString(it) }
+
             CoreSnapshot(
                 state = if (isConnected) "connected" else "disconnected",
                 selectedLocation = selLoc,
@@ -210,7 +214,8 @@ object CoreBridge {
                 activeAccount = activeIdx,
                 thresholdPct = root.optInt("threshold_percent", 95),
                 accounts = accounts,
-                locations = locations
+                locations = locations,
+                tunnelLog = tunnelLog
             )
         } catch (_: Throwable) {
             CoreSnapshot()

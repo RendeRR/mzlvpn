@@ -173,6 +173,8 @@ func Connect() error {
 		mu.Lock()
 		connected = true
 		mu.Unlock()
+		engine.LogEvent("connected (warm pass, %s)", active.Email)
+		go probeTunnel()
 
 		// Refresh quota in the background without delaying tunnel startup
 		go func() {
@@ -201,12 +203,32 @@ func Connect() error {
 	mu.Lock()
 	connected = true
 	mu.Unlock()
+	engine.LogEvent("connected (fresh pass, %s)", active.Email)
+	go probeTunnel()
 	return nil
+}
+
+// probeTunnel exercises the data path right after Connect: one probe
+// CONNECT through the fresh engine. If it fails, everything is flushed
+// and the probe runs once more — the outcome lands in the tunnel log
+// either way, so a dead-on-arrival connection is both healed and
+// explained instead of surfacing as a browser error minutes later.
+func probeTunnel() {
+	for attempt := 0; attempt < 2; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		err := engine.Probe(ctx)
+		cancel()
+		if err == nil {
+			return
+		}
+		engine.ResetSession()
+	}
 }
 
 // Reconnect immediately resets the HTTP/2 session when Android switches networks
 // (e.g. Wi-Fi <-> LTE/5G) without waiting for old TCP timeouts.
 func Reconnect() {
+	engine.LogEvent("reconnect requested")
 	engine.ResetSession()
 	mu.Lock()
 	p := pool
@@ -228,6 +250,7 @@ func Reconnect() {
 
 // Disconnect stops the local SOCKS5 tunnel.
 func Disconnect() {
+	engine.LogEvent("disconnect")
 	engine.Stop()
 	mu.Lock()
 	connected = false
@@ -541,6 +564,7 @@ func StatusJSON() string {
 		"threshold_percent": threshold,
 		"accounts":          accs,
 		"locations":         locsCopy,
+		"tunnel_log":        engine.DiagLog(),
 	}
 	data, _ := json.Marshal(payload)
 	return string(data)

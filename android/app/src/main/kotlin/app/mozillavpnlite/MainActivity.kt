@@ -1435,6 +1435,27 @@ private fun HomeTabScreen(
                 }
             }
         }
+
+        // 4. Журнал туннеля — последние события ядра: наборы сессий,
+        // сбросы, смерти стримов, пробы. Диагностика для случаев, когда
+        // «интернет пропал», а причина в обычном UI не видна.
+        if (snap.tunnelLog.isNotEmpty()) {
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionLabel(stringResource(R.string.home_log))
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        snap.tunnelLog.forEach { line ->
+                            Text(
+                                text = line,
+                                color = InkSoft,
+                                fontSize = 11.sp,
+                                fontFamily = PriborFonts.mono(FontWeight.Normal)
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

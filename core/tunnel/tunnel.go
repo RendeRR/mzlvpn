@@ -107,6 +107,8 @@ type Engine struct {
 	watchDone      chan struct{}
 	tickMu         sync.Mutex
 	lastTick       time.Time
+	diagMu         sync.Mutex
+	diag           []diagEvent
 	OnTrafficBytes func(deltaBytes int64)
 	OnQuotaHeaders func(h http.Header)
 	OnQuotaExhaust func()
@@ -118,11 +120,24 @@ func NewEngine() *Engine {
 
 // Start begins listening for local SOCKS5 connections from Android VpnService (Tun2Socks).
 func (e *Engine) Start(listenAddr, proxyEndpoint, proxyPassJWT string) (int, error) {
+	// A start always begins from a clean transport slate. Stop() already
+	// drops the pool, but the DoH connection and the package-level TLS
+	// session cache used to survive a full service restart — a corpse in
+	// either then outlived every recovery short of killing the process.
+	e.dohMu.Lock()
+	e.closeDoHLocked()
+	e.dohCC = nil
+	e.dohMu.Unlock()
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.proxyHost != proxyEndpoint {
+	fresh := e.listener == nil
+	if e.proxyHost != proxyEndpoint || fresh {
 		e.closeH2Locked()
+	}
+	if fresh {
+		resetSessionCache()
 	}
 	e.proxyHost = proxyEndpoint
 	e.bearerToken = proxyPassJWT
@@ -136,6 +151,7 @@ func (e *Engine) Start(listenAddr, proxyEndpoint, proxyPassJWT string) (int, err
 		go e.acceptLoop(ln)
 	}
 	e.startWatchdogLocked()
+	e.logDiag("engine start %s", proxyEndpoint)
 	return e.listener.Addr().(*net.TCPAddr).Port, nil
 }
 
@@ -203,6 +219,7 @@ func (e *Engine) suspensionCheck(now time.Time) bool {
 	e.lastTick = now
 	e.tickMu.Unlock()
 	if gap > suspensionGap {
+		e.logDiag("suspension gap %s — resetting session", gap.Round(time.Second))
 		e.ResetSession()
 		return true
 	}
@@ -226,11 +243,68 @@ func (e *Engine) SwitchServer(proxyEndpoint string) {
 	e.mu.Unlock()
 }
 
+// diagEvent is one entry of the engine's diagnostic log.
+type diagEvent struct {
+	at  time.Time
+	msg string
+}
+
+const diagLogCap = 24
+
+// logDiag records a tunnel event in the in-memory diagnostic log. The
+// log exists because tunnel failures on a phone are otherwise invisible:
+// Go's stderr goes to logcat the user cannot reasonably fetch, so every
+// recovery mechanism in this file reports here, and the UI surfaces the
+// log (StatusJSON -> home screen) for the next screenshot-based report.
+func (e *Engine) logDiag(format string, args ...any) {
+	e.diagMu.Lock()
+	e.diag = append(e.diag, diagEvent{at: time.Now(), msg: fmt.Sprintf(format, args...)})
+	if len(e.diag) > diagLogCap {
+		e.diag = append([]diagEvent(nil), e.diag[len(e.diag)-diagLogCap:]...)
+	}
+	e.diagMu.Unlock()
+}
+
+// LogEvent records an event from outside the tunnel package (mobile
+// lifecycle: connect, disconnect, token updates).
+func (e *Engine) LogEvent(format string, args ...any) {
+	e.logDiag(format, args...)
+}
+
+// DiagLog returns the diagnostic log, oldest first, each entry prefixed
+// with its local wall-clock time.
+func (e *Engine) DiagLog() []string {
+	e.diagMu.Lock()
+	defer e.diagMu.Unlock()
+	out := make([]string, len(e.diag))
+	for i, ev := range e.diag {
+		out[i] = ev.at.Format("15:04:05") + " " + ev.msg
+	}
+	return out
+}
+
+// Probe opens one CONNECT stream to the DoH authority and closes it,
+// exercising the full data path (session dial + CONNECT) without user
+// traffic. Run right after Connect: a dead-on-arrival path is healed by
+// the failure handling it triggers and recorded in the diagnostic log.
+func (e *Engine) Probe(ctx context.Context) error {
+	rc, wc, err := e.openH2ConnectStream(ctx, "1.1.1.1:443")
+	if err != nil {
+		e.logDiag("probe connect failed: %v", err)
+		return err
+	}
+	_ = rc.Close()
+	_ = wc.Close()
+	e.logDiag("probe connect ok")
+	return nil
+}
+
 // ResetSession immediately drops the pooled TLS 1.3 / HTTP/2 sessions and
 // the pooled DoH connection when the path under them is gone — Android
 // switched network interfaces (Wi-Fi <-> LTE/5G), or the device slept and
 // woke on a silently-dead path — so the next packet dials immediately.
 func (e *Engine) ResetSession() {
+	e.logDiag("session reset")
 	e.mu.Lock()
 	e.closeH2Locked()
 	e.mu.Unlock()
@@ -264,6 +338,11 @@ func (e *Engine) Stop() {
 		close(stop)
 		<-done
 	}
+	e.dohMu.Lock()
+	e.closeDoHLocked()
+	e.dohCC = nil
+	e.dohMu.Unlock()
+	e.logDiag("engine stop")
 }
 
 func (e *Engine) Port() int {
@@ -337,7 +416,7 @@ func (e *Engine) handleSocks5(client net.Conn) {
 			return
 		}
 		_ = client.SetDeadline(time.Time{})
-		e.relayTCPStream(client, cc, streamReader, streamWriter)
+		e.relayTCPStream(client, cc, authority, streamReader, streamWriter)
 
 	case 0x05: // hev-socks5-tunnel FWD_UDP (udp: 'tcp') — HevSocks5UDPHdr framing
 		if err := writeSocksReply(client, 0x00); err != nil {
@@ -423,7 +502,7 @@ func (p *streamProbe) Read(b []byte) (int, error) {
 // point, the serving session is evicted; the next connection then dials
 // a fresh one instead of re-entering the same corpse. A clean EOF after
 // data, or a stream-scoped reset after data, leaves the session alone.
-func (e *Engine) relayTCPStream(client net.Conn, cc *http2.ClientConn, streamReader io.ReadCloser, streamWriter io.WriteCloser) {
+func (e *Engine) relayTCPStream(client net.Conn, cc *http2.ClientConn, authority string, streamReader io.ReadCloser, streamWriter io.WriteCloser) {
 	onBytes := e.OnTrafficBytes
 	go func() {
 		_ = copyZeroAlloc(streamWriter, client, onBytes)
@@ -435,12 +514,14 @@ func (e *Engine) relayTCPStream(client net.Conn, cc *http2.ClientConn, streamRea
 		return
 	}
 	if probe.bytes == 0 {
+		e.logDiag("stream %s died before data (%v) — session evicted", authority, probe.err)
 		e.evictH2Conn(cc)
 		return
 	}
 	if !errors.Is(probe.err, io.EOF) {
 		var streamErr http2.StreamError
 		if !errors.As(probe.err, &streamErr) {
+			e.logDiag("stream %s broke mid-data (%v) — session evicted", authority, probe.err)
 			e.evictH2Conn(cc)
 		}
 	}
@@ -578,11 +659,11 @@ type streamAddr string
 func (a streamAddr) Network() string { return "tcp" }
 func (a streamAddr) String() string  { return string(a) }
 
-func (c *streamConn) LocalAddr() net.Addr                { return streamAddr("h2-stream") }
-func (c *streamConn) RemoteAddr() net.Addr               { return streamAddr("h2-stream") }
-func (c *streamConn) SetDeadline(time.Time) error        { return nil }
-func (c *streamConn) SetReadDeadline(time.Time) error    { return nil }
-func (c *streamConn) SetWriteDeadline(time.Time) error   { return nil }
+func (c *streamConn) LocalAddr() net.Addr              { return streamAddr("h2-stream") }
+func (c *streamConn) RemoteAddr() net.Addr             { return streamAddr("h2-stream") }
+func (c *streamConn) SetDeadline(time.Time) error      { return nil }
+func (c *streamConn) SetReadDeadline(time.Time) error  { return nil }
+func (c *streamConn) SetWriteDeadline(time.Time) error { return nil }
 
 // forwardDNSOverHTTPS sends the raw DNS message as an RFC 8484
 // application/dns-message POST to Cloudflare DoH, over TLS inside an H2
@@ -610,6 +691,7 @@ func (e *Engine) forwardDNSOverHTTPS(dnsQuery []byte) ([]byte, error) {
 			return resp, nil
 		}
 		lastErr = err
+		e.logDiag("doh exchange failed: %v", err)
 		deadCC := e.dohCC
 		e.closeDoHLocked()
 		e.dohCC = nil
@@ -637,7 +719,7 @@ func (e *Engine) dialDoH() (*tls.Conn, *http2.ClientConn, error) {
 	cfg := &tls.Config{
 		ServerName:         "cloudflare-dns.com",
 		MinVersion:         tls.VersionTLS12,
-		ClientSessionCache: sharedSessionCache,
+		ClientSessionCache: currentSessionCache(),
 	}
 	if e.tlsCfg != nil {
 		cfg = e.tlsCfg.Clone()
@@ -764,9 +846,27 @@ func (e *Engine) forwardDNSOverTCP(dnsQuery []byte) ([]byte, error) {
 	return respBuf, nil
 }
 
-// sharedSessionCache is created once: a fresh LRU cache per connection made
-// TLS session resumption useless.
-var sharedSessionCache = tls.NewLRUClientSessionCache(32)
+// sharedSessionCache is the TLS session-resumption cache shared by the
+// H2 dialer and the DoH dialer. It lives at package level, so it survives
+// engine Stop/Start cycles that reset everything else; resetSessionCache
+// drops it on a fresh engine start so a service restart is equivalent
+// to a process restart for transport state.
+var (
+	sessionCacheMu     sync.Mutex
+	sharedSessionCache tls.ClientSessionCache = tls.NewLRUClientSessionCache(32)
+)
+
+func currentSessionCache() tls.ClientSessionCache {
+	sessionCacheMu.Lock()
+	defer sessionCacheMu.Unlock()
+	return sharedSessionCache
+}
+
+func resetSessionCache() {
+	sessionCacheMu.Lock()
+	sharedSessionCache = tls.NewLRUClientSessionCache(32)
+	sessionCacheMu.Unlock()
+}
 
 func (e *Engine) pickH2ConnLocked() *http2.ClientConn {
 	for _, entry := range e.h2Pool {
@@ -839,6 +939,7 @@ func (e *Engine) ensureH2Session(ctx context.Context) (*http2.ClientConn, string
 	}
 	rawConn, err := rawDialer.DialContext(ctx, "tcp", proxyHost)
 	if err != nil {
+		e.logDiag("h2 dial %s: %v", proxyHost, err)
 		return nil, "", err
 	}
 	configureLowLatencyTCP(rawConn)
@@ -854,11 +955,12 @@ func (e *Engine) ensureH2Session(ctx context.Context) (*http2.ClientConn, string
 			ServerName:         host,
 			MinVersion:         tls.VersionTLS13,
 			NextProtos:         []string{"h2"},
-			ClientSessionCache: sharedSessionCache,
+			ClientSessionCache: currentSessionCache(),
 		}
 	}
 	tlsConn := tls.Client(rawConn, tlsCfg)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		e.logDiag("h2 tls %s: %v", proxyHost, err)
 		_ = rawConn.Close()
 		return nil, "", err
 	}
@@ -877,6 +979,7 @@ func (e *Engine) ensureH2Session(ctx context.Context) (*http2.ClientConn, string
 	e.h2Pool = append(e.h2Pool, h2ConnEntry{cc: newCC, raw: tlsConn})
 	token = e.bearerToken
 	e.mu.Unlock()
+	e.logDiag("h2 session up %s", proxyHost)
 
 	return newCC, token, nil
 }
@@ -980,6 +1083,7 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 			// path, so one corpse indicts them all. Flush the pool (and
 			// the DoH connection riding it) rather than evicting just
 			// this session — the caller's retry then dials fresh.
+			e.logDiag("connect %s transport error: %v", targetAuthority, err)
 			e.ResetSession()
 		}
 		return nil, nil, nil, err
@@ -993,6 +1097,7 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		e.logDiag("connect %s rejected HTTP %d", targetAuthority, resp.StatusCode)
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
 		_ = resp.Body.Close()
 		_ = pw.Close()

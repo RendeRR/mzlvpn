@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -514,6 +515,47 @@ func TestMidStreamDeathEvictsSession(t *testing.T) {
 	proxy.mu.Unlock()
 	if conns != 2 {
 		t.Fatalf("proxy saw %d connections, want 2 (corpse + fresh)", conns)
+	}
+}
+
+func TestDiagLogRecordsAndCaps(t *testing.T) {
+	e := NewEngine()
+	for i := 0; i < diagLogCap+5; i++ {
+		e.LogEvent("event %d", i)
+	}
+	log := e.DiagLog()
+	if len(log) != diagLogCap {
+		t.Fatalf("log has %d entries, want cap %d", len(log), diagLogCap)
+	}
+	if !strings.Contains(log[len(log)-1], "event 28") {
+		t.Fatalf("newest entry = %q, want 'event 28'", log[len(log)-1])
+	}
+	if !strings.Contains(log[0], "event 5") {
+		t.Fatalf("oldest entry = %q, want 'event 5' (older ones trimmed)", log[0])
+	}
+}
+
+// TestStopClosesDoH pins the restart-equivalence rule: Stop must drop
+// the pooled DoH connection too. It used to survive Stop/Start, so a
+// DoH corpse outlived every recovery short of killing the process.
+func TestStopClosesDoH(t *testing.T) {
+	proxy := startTestProxy(t)
+	e, _ := startTestEngine(t, proxy)
+	if _, err := e.forwardDNSOverHTTPS(dnsQueryFixture()); err != nil {
+		t.Fatalf("warm-up DoH: %v", err)
+	}
+	e.dohMu.Lock()
+	warm := e.dohConn != nil
+	e.dohMu.Unlock()
+	if !warm {
+		t.Fatal("DoH connection must be pooled after a query")
+	}
+	e.Stop()
+	e.dohMu.Lock()
+	closed := e.dohConn == nil && e.dohCC == nil
+	e.dohMu.Unlock()
+	if !closed {
+		t.Fatal("Stop must drop the pooled DoH connection and its session")
 	}
 }
 
