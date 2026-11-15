@@ -9,6 +9,8 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
@@ -18,20 +20,41 @@ import java.io.File
 class MinimalVpnService : VpnService() {
 
     private var connectivityManager: ConnectivityManager? = null
-    private var lastNetworkHandle: Long = 0L
+    // Underlying physical networks (Wi-Fi / cellular / ethernet). The
+    // default-network callback cannot be trusted here: while the VPN is
+    // up, the system default network is the VPN itself, whose handle
+    // never changes across a Wi-Fi <-> LTE switch — so the core never
+    // learned about handovers and its pooled connections went stale.
+    // Track the physical network set instead: any change while running
+    // means the path under the tunnel changed.
+    private val underlyingNetworks = mutableSetOf<Long>()
+    private var underlyingSeen = false
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            val handle = network.networkHandle
-            if (lastNetworkHandle != 0L && lastNetworkHandle != handle && isRunning) {
-                Thread {
-                    try {
-                        mobile.Mobile.reconnect()
-                    } catch (_: Throwable) {}
-                }.start()
+            val changed = synchronized(underlyingNetworks) {
+                val added = underlyingNetworks.add(network.networkHandle)
+                val wasSeen = underlyingSeen
+                underlyingSeen = true
+                added && wasSeen
             }
-            lastNetworkHandle = handle
+            if (changed && isRunning) reconnectCore()
         }
+
+        override fun onLost(network: Network) {
+            val changed = synchronized(underlyingNetworks) {
+                underlyingNetworks.remove(network.networkHandle)
+            }
+            if (changed && isRunning) reconnectCore()
+        }
+    }
+
+    private fun reconnectCore() {
+        Thread {
+            try {
+                mobile.Mobile.reconnect()
+            } catch (_: Throwable) {}
+        }.start()
     }
 
     override fun onCreate() {
@@ -39,7 +62,13 @@ class MinimalVpnService : VpnService() {
         ensureNotificationChannel()
         connectivityManager = getSystemService(ConnectivityManager::class.java)
         try {
-            connectivityManager?.registerDefaultNetworkCallback(networkCallback)
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+                .addTransportType(NetworkCapabilities.TRANSPORT_ETHERNET)
+                .build()
+            connectivityManager?.registerNetworkCallback(request, networkCallback)
         } catch (_: Exception) {}
     }
 

@@ -3,6 +3,7 @@ package tunnel
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -37,15 +38,19 @@ func (fw flushWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+type testConnIdxKey struct{}
+
 type testProxy struct {
-	addr        string
-	mu          sync.Mutex
-	authorities []string
-	authHeaders []string
-	rejectHosts map[string]bool
-	dohHits     int
-	dohPaths    []string
-	ln          net.Listener
+	addr          string
+	mu            sync.Mutex
+	authorities   []string
+	authHeaders   []string
+	rejectHosts   map[string]bool
+	dohHits       int
+	dohPaths      []string
+	ln            net.Listener
+	connCount     int
+	hangFirstConn bool
 }
 
 func startTestProxy(t *testing.T) *testProxy {
@@ -76,6 +81,18 @@ func startTestProxy(t *testing.T) *testProxy {
 		if r.Method != http.MethodConnect {
 			http.NotFound(w, r)
 			return
+		}
+		if idx, _ := r.Context().Value(testConnIdxKey{}).(int); idx == 0 {
+			p.mu.Lock()
+			hang := p.hangFirstConn
+			p.mu.Unlock()
+			if hang {
+				// Corpse connection: the network path is gone and the
+				// server never answers. Block until the client gives up
+				// on the stream.
+				<-r.Context().Done()
+				return
+			}
 		}
 		p.mu.Lock()
 		p.authorities = append(p.authorities, r.Host)
@@ -169,6 +186,10 @@ func startTestProxy(t *testing.T) *testProxy {
 			if err != nil {
 				return
 			}
+			p.mu.Lock()
+			idx := p.connCount
+			p.connCount++
+			p.mu.Unlock()
 			go func() {
 				// http2.Server.ServeConn requires the TLS handshake (and thus
 				// ALPN "h2" negotiation) to be complete before it runs.
@@ -177,7 +198,8 @@ func startTestProxy(t *testing.T) *testProxy {
 						return
 					}
 				}
-				srv.ServeConn(conn, &http2.ServeConnOpts{Handler: handler})
+				ctx := context.WithValue(context.Background(), testConnIdxKey{}, idx)
+				srv.ServeConn(conn, &http2.ServeConnOpts{Handler: handler, Context: ctx})
 			}()
 		}
 	}()
@@ -275,6 +297,54 @@ func TestSocksConnectEndToEnd(t *testing.T) {
 	}
 	if len(proxy.authHeaders) != 1 || proxy.authHeaders[0] != "Bearer test-token" {
 		t.Fatalf("Proxy-Authorization = %v", proxy.authHeaders)
+	}
+}
+
+// TestH2CorpseSessionEvictedAndRetried models a Wi-Fi <-> LTE switch: the
+// pooled H2 session's path silently dies (the server stops answering on
+// that connection while the socket still looks open). The next CONNECT
+// must time out fast, evict the corpse and succeed on a fresh session —
+// no manual restart.
+func TestH2CorpseSessionEvictedAndRetried(t *testing.T) {
+	old := connectHeaderTimeout
+	connectHeaderTimeout = 300 * time.Millisecond
+	defer func() { connectHeaderTimeout = old }()
+
+	proxy := startTestProxy(t)
+	e, _ := startTestEngine(t, proxy)
+
+	// Phase A: a normal stream pools the first session.
+	rc, wc, err := e.openH2ConnectStream(context.Background(), "93.184.216.34:80")
+	if err != nil {
+		t.Fatalf("phase A CONNECT: %v", err)
+	}
+	_ = wc.Close()
+	_ = rc.Close()
+
+	// The path under the pooled session dies.
+	proxy.mu.Lock()
+	proxy.hangFirstConn = true
+	proxy.mu.Unlock()
+
+	start := time.Now()
+	rc, wc, err = e.openH2ConnectStream(context.Background(), "93.184.216.34:80")
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("CONNECT after path death must recover on a fresh session: %v", err)
+	}
+	_ = wc.Close()
+	_ = rc.Close()
+	if elapsed < connectHeaderTimeout {
+		t.Fatalf("recovery took %v — the corpse timeout never fired", elapsed)
+	}
+	if elapsed > 5*time.Second {
+		t.Fatalf("recovery took %v — too slow", elapsed)
+	}
+	proxy.mu.Lock()
+	conns := proxy.connCount
+	proxy.mu.Unlock()
+	if conns != 2 {
+		t.Fatalf("proxy saw %d connections, want 2 (corpse + fresh)", conns)
 	}
 }
 

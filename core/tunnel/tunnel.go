@@ -706,10 +706,57 @@ func (e *Engine) ensureH2Session(ctx context.Context) (*http2.ClientConn, string
 	return newCC, token, nil
 }
 
+// connectHeaderTimeout caps how long a CONNECT waits for the proxy's
+// response headers. On a live path the answer takes well under a second;
+// on a dead one — the device switched networks (Wi-Fi <-> LTE) and the
+// pooled session's socket now blackholes — RoundTrip would otherwise
+// block for minutes of TCP retransmits. A var so tests can shrink it.
+var connectHeaderTimeout = 10 * time.Second
+
+// evictH2Conn drops cc from the pool and closes its raw connection. It is
+// called when a CONNECT on a pooled session fails at the transport level:
+// the session is a corpse and every later pick would hand it out again.
+// Streams still open on it share its dead path, so closing the raw
+// connection loses nothing that could still work.
+func (e *Engine) evictH2Conn(cc *http2.ClientConn) {
+	e.mu.Lock()
+	kept := e.h2Pool[:0]
+	for _, entry := range e.h2Pool {
+		if entry.cc == cc {
+			if entry.raw != nil {
+				_ = entry.raw.Close()
+			}
+			continue
+		}
+		kept = append(kept, entry)
+	}
+	e.h2Pool = kept
+	e.mu.Unlock()
+}
+
 // openH2ConnectStream opens an HTTP/2 CONNECT tunnel stream to targetAuthority.
 // Uses URL.Opaque = targetAuthority and Host = targetAuthority so golang.org/x/net/http2
 // sends `:method = CONNECT` and `:authority = targetAuthority` (without :scheme/:path).
+//
+// A transport-level failure is retried once: the first attempt evicts the
+// (presumed dead) pooled session, so the retry runs on a fresh one. That
+// turns a network switch from "no internet until a manual VPN restart"
+// into a single slightly slow connection.
 func (e *Engine) openH2ConnectStream(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, error) {
+	rc, wc, err := e.openH2ConnectStreamOnce(ctx, targetAuthority)
+	if err == nil {
+		return rc, wc, nil
+	}
+	var streamErr http2.StreamError
+	if errors.As(err, &streamErr) {
+		// Stream-scoped refusal (e.g. REFUSED_STREAM): the session itself
+		// is healthy and the caller must see the refusal as-is.
+		return nil, nil, err
+	}
+	return e.openH2ConnectStreamOnce(ctx, targetAuthority)
+}
+
+func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, error) {
 	// Time-box only session establishment (TCP dial + TLS handshake).
 	// The request itself keeps the caller's context: cancelling it would
 	// tear down the live stream.
@@ -728,13 +775,25 @@ func (e *Engine) openH2ConnectStream(ctx context.Context, targetAuthority string
 		Header: make(http.Header),
 		Body:   pr,
 	}
-	req = req.WithContext(ctx)
+	// Cap the wait for the CONNECT response headers (see
+	// connectHeaderTimeout). The timer is stopped the moment RoundTrip
+	// returns, so an established stream keeps the caller's context and
+	// is never torn down by it.
+	reqCtx, reqCancel := context.WithCancel(ctx)
+	req = req.WithContext(reqCtx)
 	req.Header.Set("Proxy-Authorization", "Bearer "+token)
 	req.Header.Set("User-Agent", fxa.FirefoxUserAgent)
 
+	timer := time.AfterFunc(connectHeaderTimeout, reqCancel)
 	resp, err := cc.RoundTrip(req)
+	timer.Stop()
 	if err != nil {
+		reqCancel()
 		_ = pw.Close()
+		var streamErr http2.StreamError
+		if !errors.As(err, &streamErr) {
+			e.evictH2Conn(cc)
+		}
 		return nil, nil, err
 	}
 
