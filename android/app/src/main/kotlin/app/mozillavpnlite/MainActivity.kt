@@ -1720,25 +1720,13 @@ private fun AccountsTabScreen(
                     Box(modifier = Modifier.clickable { onSelectAccount(idx) }) {
                         AccountPlateHeader(acc = acc, isActive = isActive)
                     }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (isActive) "АКТИВНЫЙ ПРОФИЛЬ" else if (acc.exhausted) "В РЕЗЕРВЕ ДО СБРОСА" else "В ОЧЕРЕДИ РОТАЦИИ",
-                            color = InkSoft,
-                            fontSize = 11.sp,
-                            fontFamily = PriborFonts.mono(FontWeight.Normal),
-                            letterSpacing = 1.sp,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (!isActive) {
-                            SmallPlateButton(
-                                text = "ВКЛЮЧИТЬ",
-                                onClick = { onSelectAccount(idx) }
-                            )
-                        }
-                    }
+                    Text(
+                        text = if (isActive) "АКТИВНЫЙ ПРОФИЛЬ" else if (acc.exhausted) "В РЕЗЕРВЕ ДО СБРОСА" else "В ОЧЕРЕДИ РОТАЦИИ",
+                        color = InkSoft,
+                        fontSize = 11.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.Normal),
+                        letterSpacing = 1.sp
+                    )
                 }
 
                 QuotaDrum(
@@ -1794,6 +1782,23 @@ private fun AccountsTabScreen(
                                 color = if (idx < snap.accounts.size - 1) Ink else InkSoft,
                                 fontSize = 14.sp
                             )
+                        }
+                        if (!isActive) {
+                            Box(
+                                modifier = Modifier
+                                    .background(Ink)
+                                    .border(BorderStroke(1.dp, Ink), RectangleShape)
+                                    .clickable { onSelectAccount(idx) }
+                                    .padding(horizontal = 11.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = "В РАБОТУ",
+                                    color = Paper,
+                                    fontSize = 11.sp,
+                                    fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                         Box(
                             modifier = Modifier
@@ -1930,7 +1935,7 @@ private fun ServersTabScreen(
                     fontFamily = PriborFonts.display
                 )
                 Text(
-                    text = "ЛОКАЦИИ MOZILLA · ${snap.locations.size} · ВСЕ СТРАНЫ ИЗ VPN-SERVERLIST РАЗБЛОКИРОВАНЫ",
+                    text = "ЛОКАЦИИ MOZILLA · ${snap.locations.size} · ИСТОЧНИК: REMOTE SETTINGS · VPN-SERVERLIST",
                     color = InkSoft,
                     fontSize = 11.sp,
                     fontFamily = PriborFonts.mono(FontWeight.Normal),
