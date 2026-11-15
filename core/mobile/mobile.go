@@ -95,6 +95,9 @@ func Start(dataDir string, autoConnect bool, language string) error {
 	engine.OnQuotaExhaust = func() {
 		rotateActiveAccount(p)
 	}
+	engine.OnAuthFailure = func() {
+		refreshEngineToken("401")
+	}
 
 	// Automatically fetch all 32 countries and measure real 1-RTT pings from the device
 	go func() {
@@ -130,6 +133,42 @@ func Start(dataDir string, autoConnect bool, language string) error {
 		return Connect()
 	}
 	return nil
+}
+
+// refreshEngineToken fetches a fresh ProxyPass for the active account
+// and hot-swaps it into the running engine, logging the outcome (with
+// the new pass's expiry) to the tunnel log. It is the single refresh
+// path for every trigger: a 401 from the proxy (the held token died,
+// typically while the device slept), a wake/network reconnect, and the
+// background refresh after a warm Connect. A tokenless result (Guardian
+// 429 usage-only reply) never overwrites the held token.
+func refreshEngineToken(reason string) {
+	mu.Lock()
+	p := pool
+	isConn := connected
+	mu.Unlock()
+	if p == nil || !isConn {
+		return
+	}
+	active := p.ActiveAccount()
+	if active == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	pass, err := p.EnsureFreshPass(ctx, active)
+	if err != nil {
+		engine.LogEvent("token refresh (%s) failed: %v", reason, err)
+		return
+	}
+	if pass != nil && pass.RawToken != "" {
+		engine.UpdateToken(pass.RawToken)
+		email := ""
+		if now := p.ActiveAccount(); now != nil {
+			email = now.Email
+		}
+		engine.LogEvent("token updated (%s, %s, exp %s)", reason, email, pass.ExpiresAt.Format("15:04"))
+	}
 }
 
 func rotateActiveAccount(p *accounts.Pool) {
@@ -182,15 +221,7 @@ func Connect() error {
 		mu.Unlock()
 		engine.LogEvent("connected (warm pass, %s)", active.Email)
 		go probeTunnel()
-
-		// Refresh quota in the background without delaying tunnel startup
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-			defer cancel()
-			if pass, err := p.EnsureFreshPass(ctx, active); err == nil && pass != nil {
-				engine.UpdateToken(pass.RawToken)
-			}
-		}()
+		go refreshEngineToken("connect")
 		return nil
 	}
 
@@ -237,22 +268,12 @@ func probeTunnel() {
 func Reconnect() {
 	engine.LogEvent("reconnect requested")
 	engine.ResetSession()
-	mu.Lock()
-	p := pool
-	isConn := connected
-	mu.Unlock()
-	if !isConn || p == nil {
-		return
-	}
-	go func() {
-		if active := p.ActiveAccount(); active != nil && !active.HasWarmPass() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			if pass, err := p.EnsureFreshPass(ctx, active); err == nil && pass != nil {
-				engine.UpdateToken(pass.RawToken)
-			}
-		}
-	}()
+	// Always refresh the pass on a wake/network reconnect, not only
+	// when the stored pass looks stale: the engine's held token can be
+	// older than the stored one, and a pass that dies while the device
+	// sleeps otherwise keeps meeting CONNECTs with 401 until something
+	// else happens to refresh it.
+	go refreshEngineToken("reconnect")
 }
 
 // Disconnect stops the local SOCKS5 tunnel.

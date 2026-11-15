@@ -110,9 +110,12 @@ type Engine struct {
 	lastTick       time.Time
 	diagMu         sync.Mutex
 	diag           []diagEvent
+	authMu         sync.Mutex
+	lastAuthFail   time.Time
 	OnTrafficBytes func(deltaBytes int64)
 	OnQuotaHeaders func(h http.Header)
 	OnQuotaExhaust func()
+	OnAuthFailure  func()
 }
 
 func NewEngine() *Engine {
@@ -295,6 +298,26 @@ func (e *Engine) logDiag(format string, args ...any) {
 // lifecycle: connect, disconnect, token updates).
 func (e *Engine) LogEvent(format string, args ...any) {
 	e.logDiag(format, args...)
+}
+
+// noteAuthFailure reports a 401 from the proxy: the bearer token the
+// engine holds was rejected (expired during sleep, most likely — the
+// token is only refreshed at Connect/rotation, and a pass can die
+// while the device sleeps). The callback (mobile) fetches a fresh
+// pass and hot-swaps it. Debounced: a burst of streams all meet the
+// same dead token within the same second, and one refresh fixes all.
+func (e *Engine) noteAuthFailure() {
+	e.authMu.Lock()
+	if time.Since(e.lastAuthFail) < 10*time.Second {
+		e.authMu.Unlock()
+		return
+	}
+	e.lastAuthFail = time.Now()
+	cb := e.OnAuthFailure
+	e.authMu.Unlock()
+	if cb != nil {
+		go cb()
+	}
 }
 
 // DiagLog returns the diagnostic log, oldest first, each entry prefixed
@@ -1150,6 +1173,9 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		e.logDiag("connect %s rejected HTTP %d", targetAuthority, resp.StatusCode)
+		if resp.StatusCode == http.StatusUnauthorized {
+			e.noteAuthFailure()
+		}
 		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
 		_ = resp.Body.Close()
 		_ = pw.Close()
