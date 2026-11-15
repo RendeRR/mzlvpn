@@ -1502,7 +1502,7 @@ private fun AccountsTabScreen(
                     )
                 }
                 Text(
-                    text = stringResource(R.string.accounts_subline, snap.accounts.size, snap.accounts.getOrNull(snap.activeAccount)?.let { CoreBridge.formatBytes(it.limitBytes) } ?: "—"),
+                    text = stringResource(R.string.accounts_subline, snap.accounts.size),
                     color = InkSoft,
                     fontSize = 11.sp,
                     fontFamily = PriborFonts.mono(FontWeight.Normal),

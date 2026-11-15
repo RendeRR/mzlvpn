@@ -49,7 +49,7 @@
     <string name="accounts_title">АККАУНТЫ</string>
     <string name="btn_add">+ ДОБАВИТЬ</string>
     <string name="btn_close">ЗАКРЫТЬ</string>
-    <string name="accounts_subline">ПРОФИЛИ MOZILLA · %1$d · ЛИМИТ АКТИВНОГО %2$s · АВТО-СМЕНА ПО ОЧЕРЕДИ</string>
+    <string name="accounts_subline">ПРОФИЛИ MOZILLA · %1$d · ЛИМИТ 50 ГБ — БЕСПЛАТНО НА КАЖДЫЙ АККАУНТ · АВТО-СМЕНА ПО ОЧЕРЕДИ</string>
     <string name="add_form_title">ДОБАВЛЕНИЕ АККАУНТА FIREFOX (MOZILLA VPN)</string>
     <string name="verify_totp_prompt">Введите 6-значный код двухфакторной аутентификации (2FA TOTP):</string>
     <string name="verify_email_prompt">Введите 6-значный код подтверждения входа из письма от Mozilla:</string>

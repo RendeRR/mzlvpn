@@ -49,7 +49,7 @@
     <string name="accounts_title">ACCOUNTS</string>
     <string name="btn_add">+ ADD</string>
     <string name="btn_close">CLOSE</string>
-    <string name="accounts_subline">MOZILLA PROFILES · %1$d · ACTIVE LIMIT %2$s · AUTO-ROTATION IN ORDER</string>
+    <string name="accounts_subline">MOZILLA PROFILES · %1$d · LIMIT 50 GB — FREE FOR EVERY ACCOUNT · AUTO-ROTATION IN ORDER</string>
     <string name="add_form_title">ADD A FIREFOX ACCOUNT (MOZILLA VPN)</string>
     <string name="verify_totp_prompt">Enter the 6-digit two-factor authentication code (2FA TOTP):</string>
     <string name="verify_email_prompt">Enter the 6-digit sign-in confirmation code from the Mozilla email:</string>
