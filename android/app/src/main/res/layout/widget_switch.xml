@@ -1,19 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Home-screen toggle widget as a bare breaker switch in a 1x1
-     cell (user's spec 2026-11-15): NO text at all — just the switch
-     pictogram on the paper plate, mirroring the app's own breaker.
-     The pictogram (lever down/paper = off, lever up/orange = on) is
-     swapped from VpnWidgetProvider via setImageViewResource; the
-     values here are the offline preview. The whole widget is one
-     big button. -->
+<!-- Home-screen toggle widget in a 1x1 cell: just the app icon
+     as a breaker-switch pictogram, no text (user's spec
+     2026-11-15). The vector already contains the paper plate, so
+     the root has no background or padding of its own. The state
+     pictogram is swapped from VpnWidgetProvider via
+     setImageViewResource; the src here is the offline preview.
+     The whole widget is one big button. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_bg"
     android:gravity="center"
-    android:orientation="vertical"
-    android:padding="6dp">
+    android:orientation="vertical">
 
     <ImageView
         android:id="@+id/widget_switch"

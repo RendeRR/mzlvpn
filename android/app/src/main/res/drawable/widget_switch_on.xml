@@ -1,39 +1,44 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Breaker switch pictogram, ON: the lever sits UP and is signal
-     orange. See widget_switch_off.xml for the construction notes. -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <!-- housing -->
-    <item>
-        <shape android:shape="rectangle">
-            <solid android:color="@color/pribor_ink" />
-            <corners android:radius="6dp" />
-        </shape>
-    </item>
-
-    <!-- slot -->
-    <item
-        android:width="8dp"
-        android:height="34dp"
-        android:gravity="center">
-        <shape android:shape="rectangle">
-            <solid android:color="@color/pribor_paper_deep" />
-            <corners android:radius="2dp" />
-        </shape>
-    </item>
-
-    <!-- lever, up -->
-    <item
-        android:width="22dp"
-        android:height="14dp"
-        android:top="7dp"
-        android:gravity="top|center_horizontal">
-        <shape android:shape="rectangle">
-            <solid android:color="@color/pribor_signal" />
-            <stroke
-                android:width="1dp"
-                android:color="@color/pribor_ink" />
-            <corners android:radius="2dp" />
-        </shape>
-    </item>
-</layer-list>
+<!-- Widget pictogram, ON: the app launcher icon itself
+     (ic_launcher_foreground geometry), reframed so the plate
+     fills the viewport — the widget IS the icon, per the user's
+     spec (mockup approved 2026-11-15): orange ON zone on the
+     left, black slider on the right, orange rivet. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="62dp"
+    android:height="62dp"
+    android:viewportWidth="62"
+    android:viewportHeight="62">
+    <!-- plate -->
+    <path
+        android:fillColor="@color/pribor_paper"
+        android:strokeColor="@color/pribor_ink"
+        android:strokeWidth="3"
+        android:pathData="M1.5,1.5h59v59h-59z" />
+    <!-- slider guides: end stops -->
+    <path
+        android:fillColor="@color/pribor_ink"
+        android:pathData="M8,21h3.5v20H8z" />
+    <path
+        android:fillColor="@color/pribor_ink"
+        android:pathData="M50.5,21H54v20h-3.5z" />
+    <!-- guides: top and bottom rails -->
+    <path
+        android:fillColor="@color/pribor_ink"
+        android:pathData="M8,21h46v2.5H8z" />
+    <path
+        android:fillColor="@color/pribor_ink"
+        android:pathData="M8,38.5h46V41H8z" />
+    <!-- orange ON zone -->
+    <path
+        android:fillColor="@color/pribor_signal"
+        android:pathData="M11.5,23.5H30v15H11.5z" />
+    <!-- slider -->
+    <path
+        android:fillColor="@color/pribor_ink"
+        android:pathData="M28,22h18v18H28z" />
+    <!-- rivet -->
+    <path
+        android:fillColor="@color/pribor_signal"
+        android:pathData="M48,48h6v6h-6z" />
+</vector>

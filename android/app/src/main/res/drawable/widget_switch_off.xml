@@ -1,42 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Breaker switch pictogram, OFF: the lever sits DOWN and is
-     paper-colored. Layered shapes only — the widget-safe drawable
-     tech (same family as widget_bg, which loads fine in launchers).
-     Geometry is fixed-dp and centered: the widget lives in a 1x1
-     cell, so the pictogram does not need to scale. -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-
-    <!-- housing -->
-    <item>
-        <shape android:shape="rectangle">
-            <solid android:color="@color/pribor_ink" />
-            <corners android:radius="6dp" />
-        </shape>
-    </item>
-
-    <!-- slot -->
-    <item
-        android:width="8dp"
-        android:height="34dp"
-        android:gravity="center">
-        <shape android:shape="rectangle">
-            <solid android:color="@color/pribor_paper_deep" />
-            <corners android:radius="2dp" />
-        </shape>
-    </item>
-
-    <!-- lever, down -->
-    <item
-        android:width="22dp"
-        android:height="14dp"
-        android:bottom="7dp"
-        android:gravity="bottom|center_horizontal">
-        <shape android:shape="rectangle">
-            <solid android:color="@color/pribor_paper" />
-            <stroke
-                android:width="1dp"
-                android:color="@color/pribor_ink" />
-            <corners android:radius="2dp" />
-        </shape>
-    </item>
-</layer-list>
+<!-- Widget pictogram, OFF: the app icon mirrored per the user's
+     spec (2026-11-15) — the zone is WHITE instead of orange and
+     sits on the right, the black slider is on the LEFT, and the
+     rivet is black. See widget_switch_on.xml. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="62dp"
+    android:height="62dp"
+    android:viewportWidth="62"
+    android:viewportHeight="62">
+    <!-- plate -->
+    <path
+        android:fillColor="@color/pribor_paper"
+        android:strokeColor="@color/pribor_ink"
+        android:strokeWidth="3"
+        android:pathData="M1.5,1.5h59v59h-59z" />
+    <!-- slider guides: end stops -->
+    <path
+        android:fillColor="@color/pribor_ink"
+        android:pathData="M8,21h3.5v20H8z" />
+    <path
+        android:fillColor="@color/pribor_ink"
+        android:pathData="M50.5,21H54v20h-3.5z" />
+    <!-- guides: top and bottom rails -->
+    <path
+        android:fillColor="@color/pribor_ink"
+        android:pathData="M8,21h46v2.5H8z" />
+    <path
+        android:fillColor="@color/pribor_ink"
+        android:pathData="M8,38.5h46V41H8z" />
+    <!-- white zone (was orange in ON) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M32,23.5H50.5v15H32z" />
+    <!-- slider, left -->
+    <path
+        android:fillColor="@color/pribor_ink"
+        android:pathData="M16,22h18v18H16z" />
+    <!-- rivet, black -->
+    <path
+        android:fillColor="@color/pribor_ink"
+        android:pathData="M48,48h6v6h-6z" />
+</vector>
