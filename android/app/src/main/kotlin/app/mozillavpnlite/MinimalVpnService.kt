@@ -94,6 +94,8 @@ class MinimalVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             isRunning = false
+            isStarting = false
+            VpnWidgetViews.refresh(applicationContext)
             Thread {
                 try {
                     Tun2Socks.stop()
@@ -115,6 +117,8 @@ class MinimalVpnService : VpnService() {
                 text = getString(R.string.notif_connecting_text)
             )
         )
+        isStarting = true
+        VpnWidgetViews.refresh(applicationContext)
 
         // Run blocking network & Go tunnel initialization off the Main UI thread.
         // isRunning is set ONLY after the TUN interface is up AND hev-socks5-tunnel
@@ -132,9 +136,11 @@ class MinimalVpnService : VpnService() {
             } catch (t: Throwable) {
                 android.util.Log.e("MinimalVpnService", "VPN start failed", t)
             }
+            isStarting = false
             if (tunnelUp) {
                 isRunning = true
                 updateForegroundStatusNotification()
+                VpnWidgetViews.refresh(applicationContext)
             } else {
                 failStop()
             }
@@ -146,6 +152,8 @@ class MinimalVpnService : VpnService() {
     /** Tears everything down after a failed start so no dead state survives. */
     private fun failStop() {
         isRunning = false
+        isStarting = false
+        VpnWidgetViews.refresh(applicationContext)
         try {
             Tun2Socks.stop()
         } catch (_: Throwable) {}
@@ -307,6 +315,8 @@ class MinimalVpnService : VpnService() {
 
     override fun onDestroy() {
         isRunning = false
+        isStarting = false
+        VpnWidgetViews.refresh(applicationContext)
         try {
             unregisterReceiver(userPresentReceiver)
         } catch (_: Exception) {}
@@ -324,6 +334,13 @@ class MinimalVpnService : VpnService() {
 
         @Volatile
         var isRunning = false
+            private set
+
+        /** True between a start request and the tunnel being up (or
+         *  the start failing) — lets the widget and the toggle entry
+         *  point treat "connecting" as on, not as off. */
+        @Volatile
+        var isStarting = false
             private set
 
         fun dataDir(context: Context): File = File(context.filesDir, "core")

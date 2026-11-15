@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- «Прибор» palette for non-Compose surfaces (widget, shortcuts).
+     Keep in sync with the color constants in MainActivity.kt. -->
+<resources>
+    <color name="pribor_paper">#F4F1EA</color>
+    <color name="pribor_paper_deep">#EBE5D8</color>
+    <color name="pribor_ink">#17130C</color>
+    <color name="pribor_ink_soft">#554E40</color>
+    <color name="pribor_signal">#FF4D00</color>
+</resources>
