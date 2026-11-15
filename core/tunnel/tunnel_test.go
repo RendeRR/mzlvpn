@@ -1,6 +1,8 @@
 package tunnel
 
 import (
+	"bufio"
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -18,6 +20,10 @@ import (
 
 	"golang.org/x/net/http2"
 )
+
+type nopCloserWriter struct{ io.Writer }
+
+func (nopCloserWriter) Close() error { return nil }
 
 // flushWriter flushes after every write so CONNECT echo streams behave
 // interactively instead of buffering until close.
@@ -37,6 +43,8 @@ type testProxy struct {
 	authorities []string
 	authHeaders []string
 	rejectHosts map[string]bool
+	dohHits     int
+	dohPaths    []string
 	ln          net.Listener
 }
 
@@ -81,6 +89,48 @@ func startTestProxy(t *testing.T) *testProxy {
 		w.WriteHeader(http.StatusOK)
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
+		}
+		if r.Host == "1.1.1.1:443" {
+			// DoH endpoint: TLS inside the CONNECT stream, HTTP/1.1
+			// /dns-query exchanges echoing the DNS message back.
+			sc := &streamConn{
+				Reader: r.Body,
+				Writer: flushWriter{w},
+				rc:     r.Body,
+				wc:     nopCloserWriter{flushWriter{w}},
+			}
+			tlsConn := tls.Server(sc, &tls.Config{Certificates: []tls.Certificate{cert}})
+			if err := tlsConn.Handshake(); err != nil {
+				return
+			}
+			br := bufio.NewReader(tlsConn)
+			for {
+				req, err := http.ReadRequest(br)
+				if err != nil {
+					return
+				}
+				body, err := io.ReadAll(req.Body)
+				if err != nil {
+					return
+				}
+				p.mu.Lock()
+				p.dohHits++
+				p.dohPaths = append(p.dohPaths, req.URL.Path)
+				p.mu.Unlock()
+				resp := &http.Response{
+					Status:        "200 OK",
+					StatusCode:    http.StatusOK,
+					Proto:         "HTTP/1.1",
+					ProtoMajor:    1,
+					ProtoMinor:    1,
+					Header:        http.Header{"Content-Type": []string{"application/dns-message"}},
+					Body:          io.NopCloser(bytes.NewReader(body)),
+					ContentLength: int64(len(body)),
+				}
+				if err := resp.Write(tlsConn); err != nil {
+					return
+				}
+			}
 		}
 		if r.Host == "1.1.1.1:53" {
 			// DNS-over-TCP endpoint: echo the framed query back as the response.
@@ -253,9 +303,11 @@ func TestSocksUnsupportedCommand(t *testing.T) {
 	}
 }
 
-func TestHevUDPInTCPDNSBridge(t *testing.T) {
-	proxy := startTestProxy(t)
-	_, port := startTestEngine(t, proxy)
+// runDNSBridgeScenario drives one FWD_UDP session: a DNS query to 8.8.8.8:53
+// must come back framed from 8.8.8.8:53 with the payload intact, and a
+// non-DNS datagram must be dropped.
+func runDNSBridgeScenario(t *testing.T, port int) {
+	t.Helper()
 
 	conn := dialSocks(t, port)
 	socksGreeting(t, conn)
@@ -309,6 +361,51 @@ func TestHevUDPInTCPDNSBridge(t *testing.T) {
 	one := make([]byte, 1)
 	if _, err := conn.Read(one); err == nil {
 		t.Fatal("non-DNS UDP datagram unexpectedly produced a response")
+	}
+}
+
+func TestHevUDPInTCPDNSBridge(t *testing.T) {
+	proxy := startTestProxy(t)
+	_, port := startTestEngine(t, proxy)
+
+	runDNSBridgeScenario(t, port)
+
+	// With both paths open, DNS must go through DoH on :443 (primary).
+	proxy.mu.Lock()
+	defer proxy.mu.Unlock()
+	if proxy.dohHits < 1 {
+		t.Fatalf("expected DoH to be used, dohHits = %d", proxy.dohHits)
+	}
+	if len(proxy.dohPaths) < 1 || proxy.dohPaths[0] != "/dns-query" {
+		t.Fatalf("DoH paths = %v", proxy.dohPaths)
+	}
+}
+
+func TestHevUDPInTCPDNSBridgeDoHOnly(t *testing.T) {
+	proxy := startTestProxy(t)
+	proxy.rejectHosts["1.1.1.1:53"] = true // proxy refuses :53 egress
+	_, port := startTestEngine(t, proxy)
+
+	runDNSBridgeScenario(t, port)
+
+	proxy.mu.Lock()
+	defer proxy.mu.Unlock()
+	if proxy.dohHits < 1 {
+		t.Fatal("DNS must still resolve via DoH when :53 is refused")
+	}
+}
+
+func TestHevUDPInTCPDNSBridgeFallbackTCP(t *testing.T) {
+	proxy := startTestProxy(t)
+	proxy.rejectHosts["1.1.1.1:443"] = true // DoH unreachable
+	_, port := startTestEngine(t, proxy)
+
+	runDNSBridgeScenario(t, port)
+
+	proxy.mu.Lock()
+	defer proxy.mu.Unlock()
+	if proxy.dohHits != 0 {
+		t.Fatalf("DoH must not be hit when :443 is rejected, dohHits = %d", proxy.dohHits)
 	}
 }
 

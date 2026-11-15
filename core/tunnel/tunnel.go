@@ -9,8 +9,11 @@
 //   - UDP: hev is configured with udp: 'tcp', so datagrams arrive on a TCP
 //     connection as SOCKS5 FWD_UDP (cmd 0x05) with per-datagram framing
 //     [len u16][hdrlen u8][socks addr][payload]. Only DNS (port 53) can be
-//     carried: it is bridged to DNS-over-TCP through the H2 tunnel. All
-//     other UDP (QUIC etc.) is dropped — the transport has no UDP bearer.
+//     carried: it is resolved through the H2 tunnel — primarily via
+//     DNS-over-HTTPS to Cloudflare on :443 (CONNECT proxies commonly refuse
+//     egress to :53 while :443 is the port the data plane already uses),
+//     with classic DNS-over-TCP to 1.1.1.1:53 as fallback. All other UDP
+//     (QUIC etc.) is dropped — the transport has no UDP bearer.
 //   - SOCKS5 UDP ASSOCIATE (cmd 0x03) is rejected with rep 0x07.
 //   - A small pool of H2 connections (up to maxH2Conns) is kept so a busy
 //     connection is never torn down just because its stream limit is hit.
@@ -19,12 +22,15 @@
 package tunnel
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -92,6 +98,9 @@ type Engine struct {
 	bearerToken    string
 	h2Pool         []h2ConnEntry
 	tlsCfg         *tls.Config // test hook: overrides the default TLS config when set
+	dohMu          sync.Mutex
+	dohConn        *tls.Conn
+	dohReader      *bufio.Reader
 	OnTrafficBytes func(deltaBytes int64)
 	OnQuotaHeaders func(h http.Header)
 	OnQuotaExhaust func()
@@ -339,14 +348,17 @@ func (e *Engine) handleHevUDPInTCP(client net.Conn) {
 			e.OnTrafficBytes(int64(dataLen))
 		}
 
-		_, dstPort, err := parseSocksAddrBytes(addrBytes)
+		dstHost, dstPort, err := parseSocksAddrBytes(addrBytes)
 		if err != nil || dstPort != 53 {
 			continue // not DNS: no UDP bearer, drop the datagram
 		}
 
 		go func(rawAddr, udpPayload []byte) {
-			respPayload, err := e.forwardDNSOverTCP(udpPayload)
+			respPayload, err := e.forwardDNS(udpPayload)
 			if err != nil || len(respPayload) == 0 {
+				// Visible in logcat: a silently dropped DNS answer is
+				// indistinguishable from "no internet" on the device.
+				log.Printf("mzlvpn: DNS forward to %s:53 failed: %v", dstHost, err)
 				return
 			}
 			if e.OnTrafficBytes != nil {
@@ -394,6 +406,150 @@ func parseSocksAddrBytes(b []byte) (string, uint16, error) {
 		return string(b[2 : 2+l]), binary.BigEndian.Uint16(b[2+l : 2+l+2]), nil
 	default:
 		return "", 0, errors.New("unsupported atyp")
+	}
+}
+
+// forwardDNS resolves one raw DNS query through the H2 tunnel. The primary
+// path is DNS-over-HTTPS on :443 — the port the data plane already uses for
+// everything else; CONNECT proxies that refuse egress to :53 were observed
+// to kill all browser traffic while IP-based apps (Telegram) kept working.
+// Classic DNS-over-TCP to 1.1.1.1:53 remains as fallback.
+func (e *Engine) forwardDNS(dnsQuery []byte) ([]byte, error) {
+	resp, err := e.forwardDNSOverHTTPS(dnsQuery)
+	if err == nil && len(resp) > 0 {
+		return resp, nil
+	}
+	dohErr := err
+	resp, err = e.forwardDNSOverTCP(dnsQuery)
+	if err != nil {
+		return nil, fmt.Errorf("doh: %v; dns-over-tcp: %w", dohErr, err)
+	}
+	return resp, nil
+}
+
+// streamConn adapts the separate read/write halves of an H2 CONNECT stream
+// to net.Conn so crypto/tls can run over it.
+type streamConn struct {
+	io.Reader
+	io.Writer
+	rc io.Closer
+	wc io.Closer
+}
+
+func (c *streamConn) Close() error {
+	_ = c.rc.Close()
+	return c.wc.Close()
+}
+
+type streamAddr string
+
+func (a streamAddr) Network() string { return "tcp" }
+func (a streamAddr) String() string  { return string(a) }
+
+func (c *streamConn) LocalAddr() net.Addr                { return streamAddr("h2-stream") }
+func (c *streamConn) RemoteAddr() net.Addr               { return streamAddr("h2-stream") }
+func (c *streamConn) SetDeadline(time.Time) error        { return nil }
+func (c *streamConn) SetReadDeadline(time.Time) error    { return nil }
+func (c *streamConn) SetWriteDeadline(time.Time) error   { return nil }
+
+// forwardDNSOverHTTPS sends the raw DNS message as an RFC 8484
+// application/dns-message POST to Cloudflare DoH, over TLS inside an H2
+// CONNECT stream to 1.1.1.1:443. One TLS connection is pooled and reused
+// (queries are serialized — DNS volume is low and correctness beats
+// parallelism here); a failed exchange closes it and retries once on a
+// fresh connection.
+func (e *Engine) forwardDNSOverHTTPS(dnsQuery []byte) ([]byte, error) {
+	e.dohMu.Lock()
+	defer e.dohMu.Unlock()
+
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		if e.dohConn == nil {
+			conn, err := e.dialDoH()
+			if err != nil {
+				return nil, err
+			}
+			e.dohConn = conn
+			e.dohReader = bufio.NewReader(conn)
+		}
+		resp, err := e.dohRoundTrip(dnsQuery)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		e.closeDoHLocked()
+	}
+	return nil, lastErr
+}
+
+func (e *Engine) dialDoH() (*tls.Conn, error) {
+	// The H2 stream must outlive this call (it backs the pooled DoH
+	// connection), so it is opened with Background: openH2ConnectStream
+	// binds the stream to the caller's context, and cancelling that
+	// context would tear the stream down. Only the TLS handshake gets
+	// its own short-lived context.
+	rc, wc, err := e.openH2ConnectStream(context.Background(), "1.1.1.1:443")
+	if err != nil {
+		return nil, err
+	}
+	raw := &streamConn{Reader: rc, Writer: wc, rc: rc, wc: wc}
+	cfg := &tls.Config{
+		ServerName:         "cloudflare-dns.com",
+		MinVersion:         tls.VersionTLS12,
+		ClientSessionCache: sharedSessionCache,
+	}
+	if e.tlsCfg != nil {
+		cfg = e.tlsCfg.Clone()
+		if cfg.ServerName == "" {
+			cfg.ServerName = "cloudflare-dns.com"
+		}
+	}
+	tlsConn := tls.Client(raw, cfg)
+	hsCtx, hsCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer hsCancel()
+	if err := tlsConn.HandshakeContext(hsCtx); err != nil {
+		_ = raw.Close()
+		return nil, err
+	}
+	return tlsConn, nil
+}
+
+func (e *Engine) dohRoundTrip(dnsQuery []byte) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodPost, "https://cloudflare-dns.com/dns-query", bytes.NewReader(dnsQuery))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/dns-message")
+	req.Header.Set("Accept", "application/dns-message")
+	if err := req.Write(e.dohConn); err != nil {
+		return nil, err
+	}
+	resp, err := http.ReadResponse(e.dohReader, req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("doh status %s", resp.Status)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 65535))
+	if err != nil {
+		return nil, err
+	}
+	// A DoH answer must echo the query's transaction ID; anything else means
+	// the pooled connection desynchronized and must not be trusted.
+	if len(body) < 2 || len(dnsQuery) < 2 || body[0] != dnsQuery[0] || body[1] != dnsQuery[1] {
+		return nil, errors.New("doh response txid mismatch")
+	}
+	return body, nil
+}
+
+func (e *Engine) closeDoHLocked() {
+	if e.dohConn != nil {
+		_ = e.dohConn.Close()
+		e.dohConn = nil
+		e.dohReader = nil
 	}
 }
 
