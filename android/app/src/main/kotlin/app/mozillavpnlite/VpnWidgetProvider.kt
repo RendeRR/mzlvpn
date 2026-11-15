@@ -7,14 +7,14 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.widget.RemoteViews
-import org.json.JSONObject
 
 /**
- * Home-screen toggle widget — one line: status square + state text,
- * and the short ВКЛ/ВЫКЛ button on the right. State changes are
- * pushed by MinimalVpnService (start, connected, stop, destroy)
- * through [VpnWidgetViews.refresh]; onUpdate only covers placement
- * and launcher-driven refreshes. The whole widget is one button that
+ * Home-screen toggle widget: a bare breaker switch in a 1x1 cell,
+ * no text — the pictogram mirrors the app's own breaker (lever down
+ * = off, lever up in signal orange = on). State changes are pushed
+ * by MinimalVpnService (start, connected, stop, destroy) through
+ * [VpnWidgetViews.refresh]; onUpdate only covers placement and
+ * launcher-driven refreshes. The whole widget is one button that
  * fires VpnToggleActivity.
  */
 class VpnWidgetProvider : AppWidgetProvider() {
@@ -24,8 +24,8 @@ class VpnWidgetProvider : AppWidgetProvider() {
                 VpnWidgetViews.build(context)
             } catch (_: Throwable) {
                 // Never leave the launcher with nothing: the bare
-                // layout (static texts) is the last-resort frame.
-                RemoteViews(context.packageName, R.layout.widget_toggle)
+                // layout (static pictogram) is the last-resort frame.
+                RemoteViews(context.packageName, R.layout.widget_switch)
             }
             manager.updateAppWidget(id, views)
         }
@@ -49,9 +49,8 @@ object VpnWidgetViews {
     }
 
     fun build(context: Context): RemoteViews {
-        val views = RemoteViews(context.packageName, R.layout.widget_toggle)
-        val running = MinimalVpnService.isRunning
-        val starting = !running && MinimalVpnService.isStarting
+        val views = RemoteViews(context.packageName, R.layout.widget_switch)
+        val on = MinimalVpnService.isRunning || MinimalVpnService.isStarting
 
         val togglePending = PendingIntent.getActivity(
             context,
@@ -60,76 +59,10 @@ object VpnWidgetViews {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         views.setOnClickPendingIntent(R.id.widget_root, togglePending)
-        views.setOnClickPendingIntent(R.id.widget_action, togglePending)
-
-        val paper = context.getColor(R.color.pribor_paper)
-        val ink = context.getColor(R.color.pribor_ink)
-        val signal = context.getColor(R.color.pribor_signal)
-
-        when {
-            running -> {
-                views.setTextColor(R.id.widget_square, signal)
-                views.setTextViewText(R.id.widget_state, connectedState(context))
-                views.setTextViewText(
-                    R.id.widget_action,
-                    context.getString(R.string.widget_btn_off)
-                )
-                views.setInt(
-                    R.id.widget_action,
-                    "setBackgroundResource",
-                    R.drawable.widget_btn_ink
-                )
-                views.setTextColor(R.id.widget_action, paper)
-            }
-            starting -> {
-                views.setTextColor(R.id.widget_square, signal)
-                views.setTextViewText(
-                    R.id.widget_state,
-                    context.getString(R.string.widget_state_connecting)
-                )
-                views.setTextViewText(
-                    R.id.widget_action,
-                    context.getString(R.string.widget_btn_off)
-                )
-                views.setInt(
-                    R.id.widget_action,
-                    "setBackgroundResource",
-                    R.drawable.widget_btn_ink
-                )
-                views.setTextColor(R.id.widget_action, paper)
-            }
-            else -> {
-                views.setTextColor(R.id.widget_square, ink)
-                views.setTextViewText(
-                    R.id.widget_state,
-                    context.getString(R.string.state_off)
-                )
-                views.setTextViewText(
-                    R.id.widget_action,
-                    context.getString(R.string.widget_btn_on)
-                )
-                views.setInt(
-                    R.id.widget_action,
-                    "setBackgroundResource",
-                    R.drawable.widget_btn_signal
-                )
-                views.setTextColor(R.id.widget_action, paper)
-            }
-        }
+        views.setImageViewResource(
+            R.id.widget_switch,
+            if (on) R.drawable.widget_switch_on else R.drawable.widget_switch_off
+        )
         return views
-    }
-
-    /** State line while connected: the country CODE only ("DE") —
-     *  the user asked for the code without the country name. Runs
-     *  only in that state, i.e. in the service's process where the
-     *  core is started. */
-    private fun connectedState(context: Context): String {
-        return try {
-            val root = JSONObject(mobile.Mobile.statusJSON())
-            val code = root.optJSONObject("location")?.optString("code", "") ?: ""
-            code.ifBlank { context.getString(R.string.state_on) }
-        } catch (_: Throwable) {
-            context.getString(R.string.state_on)
-        }
     }
 }
