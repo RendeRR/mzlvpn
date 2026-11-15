@@ -4,6 +4,21 @@
 Нативный Kotlin + Jetpack Compose, сетевое ядро на Go. Дизайн «Прибор»:
 бумага, чернила и один сигнальный оранжевый — без градиентов и круглых кнопок.
 
+## Скриншоты
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/home.png" width="260" alt="Главный экран: подключено, рубильник в положении ВКЛ"></td>
+    <td align="center"><img src="docs/screenshots/accounts.png" width="260" alt="Аккаунты: квоты, ротация, кнопка «В работу»"></td>
+    <td align="center"><img src="docs/screenshots/locations.png" width="260" alt="Локации: список стран по пингу"></td>
+  </tr>
+  <tr>
+    <td align="center">Пульт</td>
+    <td align="center">Аккаунты</td>
+    <td align="center">Локации</td>
+  </tr>
+</table>
+
 ## Возможности
 
 - Вход в аккаунт Mozilla (FxA): пароль, код подтверждения из письма,
