@@ -25,7 +25,6 @@
     <!-- Home -->
     <string name="home_accounts">ACCOUNTS · %1$d</string>
     <string name="home_locations_fast">LOCATIONS · FASTEST</string>
-    <string name="home_log">TUNNEL LOG</string>
     <string name="quota_used_line">USED: %1$s OF %2$s</string>
     <string name="quota_threshold_line">%1$d%% · THRESHOLD %2$d%%</string>
     <string name="auto_row_code">AUTO</string>

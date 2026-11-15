@@ -54,6 +54,9 @@ type testProxy struct {
 	hangFirstConn bool
 	hangDoH       bool
 	conns         []net.Conn
+	unauthHosts   map[string]bool
+	unauthFresh   map[string]bool
+	dropHosts     map[string]bool
 }
 
 func (p *testProxy) killConn(idx int) {
@@ -87,7 +90,7 @@ func startTestProxy(t *testing.T) *testProxy {
 	}
 	cert := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
 
-	p := &testProxy{rejectHosts: map[string]bool{}}
+	p := &testProxy{rejectHosts: map[string]bool{}, unauthHosts: map[string]bool{}, unauthFresh: map[string]bool{}, dropHosts: map[string]bool{}}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodConnect {
 			http.NotFound(w, r)
@@ -109,7 +112,14 @@ func startTestProxy(t *testing.T) *testProxy {
 		p.authorities = append(p.authorities, r.Host)
 		p.authHeaders = append(p.authHeaders, r.Header.Get("Proxy-Authorization"))
 		reject := p.rejectHosts[r.Host]
+		unauth := p.unauthHosts[r.Host] ||
+			(p.unauthFresh[r.Host] && !strings.Contains(r.Header.Get("Proxy-Authorization"), "fresh-token"))
+		drop := p.dropHosts[r.Host]
 		p.mu.Unlock()
+		if unauth {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		if reject {
 			w.WriteHeader(http.StatusForbidden)
 			return
@@ -117,6 +127,11 @@ func startTestProxy(t *testing.T) *testProxy {
 		w.WriteHeader(http.StatusOK)
 		if f, ok := w.(http.Flusher); ok {
 			f.Flush()
+		}
+		if drop {
+			// Accept the CONNECT, then hang up without a single byte:
+			// a stream that dies before data.
+			return
 		}
 		if r.Host == "1.1.1.1:443" {
 			// DoH endpoint: TLS inside the CONNECT stream, HTTP/1.1
@@ -518,24 +533,6 @@ func TestMidStreamDeathEvictsSession(t *testing.T) {
 	}
 }
 
-func TestDiagLogRecordsAndCaps(t *testing.T) {
-	e := NewEngine()
-	for i := 0; i < diagLogCap+5; i++ {
-		e.LogEvent("event %d", i)
-	}
-	log := e.DiagLog()
-	if len(log) != diagLogCap {
-		t.Fatalf("log has %d entries, want cap %d", len(log), diagLogCap)
-	}
-	wantNewest := "event " + strconv.Itoa(diagLogCap+4)
-	if !strings.Contains(log[len(log)-1], wantNewest) {
-		t.Fatalf("newest entry = %q, want %q", log[len(log)-1], wantNewest)
-	}
-	if !strings.Contains(log[0], "event 5") {
-		t.Fatalf("oldest entry = %q, want 'event 5' (older ones trimmed)", log[0])
-	}
-}
-
 // TestStopClosesDoH pins the restart-equivalence rule: Stop must drop
 // the pooled DoH connection too. It used to survive Stop/Start, so a
 // DoH corpse outlived every recovery short of killing the process.
@@ -607,6 +604,124 @@ func TestRelayIgnoresLocallyClosedConn(t *testing.T) {
 	e.mu.RUnlock()
 	if poolLen != 1 {
 		t.Fatalf("pool has %d sessions, want 1: a locally-closed stream must not evict", poolLen)
+	}
+}
+
+// TestAuthFailureCallbackOn401 asserts that an HTTP 401 from the proxy
+// (the held ProxyPass token was rejected — it expired, typically while
+// the device slept) fires OnAuthFailure so mobile can fetch a fresh
+// pass, and that a burst of 401s is debounced to a single firing.
+func TestAuthFailureCallbackOn401(t *testing.T) {
+	proxy := startTestProxy(t)
+	e, _ := startTestEngine(t, proxy)
+	proxy.mu.Lock()
+	proxy.unauthHosts["93.184.216.34:80"] = true
+	proxy.mu.Unlock()
+
+	fired := make(chan struct{}, 4)
+	e.OnAuthFailure = func() { fired <- struct{}{} }
+
+	if _, _, err := e.openH2ConnectStream(context.Background(), "93.184.216.34:80"); err == nil {
+		t.Fatal("CONNECT to a 401 host must fail")
+	}
+	select {
+	case <-fired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("OnAuthFailure did not fire on HTTP 401")
+	}
+	select {
+	case <-fired:
+		t.Fatal("OnAuthFailure fired again inside the debounce window")
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// TestAuth401WaitsForRefreshAndRetries asserts the wake-from-sleep
+// save: the first CONNECT meets a dead token (401), the auth-failure
+// callback swaps in a fresh pass, and the SAME stream open retries on
+// it instead of failing — the caller's page load survives the wake
+// instead of dying into an offline fallback.
+func TestAuth401WaitsForRefreshAndRetries(t *testing.T) {
+	proxy := startTestProxy(t)
+	e, _ := startTestEngine(t, proxy)
+	proxy.mu.Lock()
+	proxy.unauthFresh["93.184.216.34:80"] = true
+	proxy.mu.Unlock()
+	e.UpdateToken("stale-token")
+	e.OnAuthFailure = func() {
+		go func() {
+			time.Sleep(150 * time.Millisecond)
+			e.UpdateToken("fresh-token")
+		}()
+	}
+	start := time.Now()
+	rc, _, err := e.openH2ConnectStream(context.Background(), "93.184.216.34:80")
+	if err != nil {
+		t.Fatalf("CONNECT must survive a mid-open token refresh: %v", err)
+	}
+	_ = rc.Close()
+	if elapsed := time.Since(start); elapsed > 2500*time.Millisecond {
+		t.Fatalf("refresh wait took too long: %v", elapsed)
+	}
+}
+
+// TestPreDataDeathNeedsTwoStrikes asserts the anti-carousel rule: a
+// stream dying before any data is weak evidence (the proxy sheds
+// single streams while the session lives), so the first death keeps
+// the session — and its egress IP — while a second consecutive death
+// evicts it and the next connection recovers on a fresh session.
+func TestPreDataDeathNeedsTwoStrikes(t *testing.T) {
+	proxy := startTestProxy(t)
+	_, port := startTestEngine(t, proxy)
+	proxy.mu.Lock()
+	proxy.dropHosts["93.184.216.34:80"] = true
+	proxy.mu.Unlock()
+
+	dropAttempt := func() {
+		conn := dialSocks(t, port)
+		defer conn.Close()
+		socksGreeting(t, conn)
+		if rep := socksRequest(t, conn, 0x01, net.ParseIP("93.184.216.34"), 80); rep != 0x00 {
+			t.Fatalf("CONNECT rep = %d, want 0x00", rep)
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		if _, err := conn.Read(make([]byte, 1)); err == nil {
+			t.Fatal("dropped stream must close the SOCKS connection")
+		}
+	}
+	dropAttempt() // strike 1: session kept
+	dropAttempt() // strike 2: session evicted
+
+	proxy.mu.Lock()
+	conns := proxy.connCount
+	proxy.mu.Unlock()
+	if conns != 1 {
+		t.Fatalf("after two dropped streams the proxy saw %d conns, want 1 (eviction itself dials nothing)", conns)
+	}
+
+	// Un-drop: the next connection must dial a FRESH session and work.
+	proxy.mu.Lock()
+	delete(proxy.dropHosts, "93.184.216.34:80")
+	proxy.mu.Unlock()
+	conn := dialSocks(t, port)
+	defer conn.Close()
+	socksGreeting(t, conn)
+	if rep := socksRequest(t, conn, 0x01, net.ParseIP("93.184.216.34"), 80); rep != 0x00 {
+		t.Fatalf("CONNECT after eviction rep = %d, want 0x00", rep)
+	}
+	msg := []byte("hello-vpn")
+	if _, err := conn.Write(msg); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]byte, len(msg))
+	if _, err := io.ReadFull(conn, got); err != nil {
+		t.Fatalf("echo on the fresh session: %v", err)
+	}
+	proxy.mu.Lock()
+	conns = proxy.connCount
+	proxy.mu.Unlock()
+	if conns != 2 {
+		t.Fatalf("proxy saw %d conns, want 2 (corpse + fresh)", conns)
 	}
 }
 

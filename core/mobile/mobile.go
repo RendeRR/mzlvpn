@@ -39,11 +39,6 @@ var (
 	pendingSessionHex string
 	pendingVerifyMode string // "email-2fa" or "totp-2fa"
 
-	// diagOffsetMin mirrors the value last passed to SetUTCOffset, so
-	// log lines built here (token expiry) use the same wall clock as
-	// the tunnel's own diagnostic timestamps.
-	diagOffsetMin int
-
 	// tokenLoopStop closes the proactive pass-refresh loop; nil when
 	// the loop is not running. Guarded by mu.
 	tokenLoopStop chan struct{}
@@ -64,14 +59,6 @@ func jsonResult(state, message, email string) string {
 // ("en*" → English, anything else → Russian). Safe to call at any time.
 func SetLanguage(code string) {
 	lang.Set(code)
-}
-
-// SetUTCOffset tells the core the device's current UTC offset in
-// minutes, so tunnel-log timestamps render in the user's wall-clock
-// time instead of the Go process's UTC. Safe to call at any time.
-func SetUTCOffset(minutes int) {
-	diagOffsetMin = minutes
-	tunnel.SetDiagZone(minutes)
 }
 
 // Start initializes the account pool and server list in dataDir.
@@ -168,17 +155,10 @@ func refreshEngineToken(reason string) {
 	defer cancel()
 	pass, err := p.EnsureFreshPass(ctx, active)
 	if err != nil {
-		engine.LogEvent("token refresh (%s) failed: %v", reason, err)
 		return
 	}
 	if pass != nil && pass.RawToken != "" {
 		engine.UpdateToken(pass.RawToken)
-		email := ""
-		if now := p.ActiveAccount(); now != nil {
-			email = now.Email
-		}
-		expLocal := pass.ExpiresAt.In(time.FixedZone("", diagOffsetMin*60))
-		engine.LogEvent("token updated (%s, %s, exp %s)", reason, email, expLocal.Format("15:04"))
 	}
 }
 
@@ -279,7 +259,6 @@ func Connect() error {
 		mu.Lock()
 		connected = true
 		mu.Unlock()
-		engine.LogEvent("connected (warm pass, %s)", active.Email)
 		go probeTunnel()
 		go refreshEngineToken("connect")
 		startTokenRefreshLoop()
@@ -302,7 +281,6 @@ func Connect() error {
 	mu.Lock()
 	connected = true
 	mu.Unlock()
-	engine.LogEvent("connected (fresh pass, %s)", active.Email)
 	go probeTunnel()
 	startTokenRefreshLoop()
 	return nil
@@ -328,7 +306,6 @@ func probeTunnel() {
 // Reconnect immediately resets the HTTP/2 session when Android switches networks
 // (e.g. Wi-Fi <-> LTE/5G) without waiting for old TCP timeouts.
 func Reconnect() {
-	engine.LogEvent("reconnect requested")
 	// Always refresh the pass on a wake/network reconnect, not only
 	// when the stored pass looks stale: the engine's held token can be
 	// older than the stored one, and a pass that dies while the device
@@ -347,16 +324,13 @@ func Reconnect() {
 	err := engine.Probe(ctx)
 	cancel()
 	if err == nil {
-		engine.LogEvent("reconnect: session alive — kept")
 		return
 	}
-	engine.LogEvent("reconnect: probe failed (%v) — resetting session", err)
 	engine.ResetSession()
 }
 
 // Disconnect stops the local SOCKS5 tunnel.
 func Disconnect() {
-	engine.LogEvent("disconnect")
 	stopTokenRefreshLoop()
 	engine.Stop()
 	mu.Lock()
@@ -671,7 +645,6 @@ func StatusJSON() string {
 		"threshold_percent": threshold,
 		"accounts":          accs,
 		"locations":         locsCopy,
-		"tunnel_log":        engine.DiagLog(),
 	}
 	data, _ := json.Marshal(payload)
 	return string(data)

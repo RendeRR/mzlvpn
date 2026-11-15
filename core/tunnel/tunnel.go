@@ -108,12 +108,8 @@ type Engine struct {
 	watchDone      chan struct{}
 	tickMu         sync.Mutex
 	lastTick       time.Time
-	diagMu         sync.Mutex
-	diag           []diagEvent
 	authMu         sync.Mutex
 	lastAuthFail   time.Time
-	rejectMu       sync.Mutex
-	lastReject     map[string]time.Time
 	deathMu        sync.Mutex
 	preDataDeaths  map[*http2.ClientConn]int
 	OnTrafficBytes func(deltaBytes int64)
@@ -159,7 +155,6 @@ func (e *Engine) Start(listenAddr, proxyEndpoint, proxyPassJWT string) (int, err
 		go e.acceptLoop(ln)
 	}
 	e.startWatchdogLocked()
-	e.logDiag("engine start %s", proxyEndpoint)
 	return e.listener.Addr().(*net.TCPAddr).Port, nil
 }
 
@@ -227,7 +222,6 @@ func (e *Engine) suspensionCheck(now time.Time) bool {
 	e.lastTick = now
 	e.tickMu.Unlock()
 	if gap > suspensionGap {
-		e.logDiag("suspension gap %s — resetting session", gap.Round(time.Second))
 		e.ResetSession()
 		return true
 	}
@@ -251,26 +245,6 @@ func (e *Engine) SwitchServer(proxyEndpoint string) {
 	e.mu.Unlock()
 }
 
-// diagEvent is one entry of the engine's diagnostic log.
-type diagEvent struct {
-	at  time.Time
-	msg string
-}
-
-const diagLogCap = 48
-
-// diagZone is the zone diagnostic timestamps are rendered in. The Go
-// process on Android runs in UTC unless told otherwise, while the user
-// reads the log against their wall clock — the app passes its UTC
-// offset in at startup (mobile.SetUTCOffset).
-var diagZone = time.Local
-
-// SetDiagZone sets the zone for diagnostic log timestamps from a UTC
-// offset in minutes.
-func SetDiagZone(offsetMinutes int) {
-	diagZone = time.FixedZone("", offsetMinutes*60)
-}
-
 // isClosedConnErr reports whether err means "our own code closed this
 // connection" — a stream or RoundTrip that died because an eviction or
 // a pool flush closed the raw socket under it. Such errors are
@@ -282,26 +256,6 @@ func SetDiagZone(offsetMinutes int) {
 // "use of closed network connection".
 func isClosedConnErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "use of closed network connection")
-}
-
-// logDiag records a tunnel event in the in-memory diagnostic log. The
-// log exists because tunnel failures on a phone are otherwise invisible:
-// Go's stderr goes to logcat the user cannot reasonably fetch, so every
-// recovery mechanism in this file reports here, and the UI surfaces the
-// log (StatusJSON -> home screen) for the next screenshot-based report.
-func (e *Engine) logDiag(format string, args ...any) {
-	e.diagMu.Lock()
-	e.diag = append(e.diag, diagEvent{at: time.Now(), msg: fmt.Sprintf(format, args...)})
-	if len(e.diag) > diagLogCap {
-		e.diag = append([]diagEvent(nil), e.diag[len(e.diag)-diagLogCap:]...)
-	}
-	e.diagMu.Unlock()
-}
-
-// LogEvent records an event from outside the tunnel package (mobile
-// lifecycle: connect, disconnect, token updates).
-func (e *Engine) LogEvent(format string, args ...any) {
-	e.logDiag(format, args...)
 }
 
 // noteAuthFailure reports a 401 from the proxy: the bearer token the
@@ -376,24 +330,6 @@ func (e *rejectionError) Error() string {
 	return fmt.Sprintf("CONNECT %s rejected HTTP %d", e.target, e.status)
 }
 
-// shouldLogReject rate-limits rejection log lines: apps retry refused
-// ports (FCM 5228, MTProto 5222) in lockstep, and three identical
-// lines per attempt bury the journal. One line per target+status per
-// minute keeps the fact without the flood.
-func (e *Engine) shouldLogReject(target string, status int) bool {
-	key := target + "|" + strconv.Itoa(status)
-	e.rejectMu.Lock()
-	defer e.rejectMu.Unlock()
-	if e.lastReject == nil {
-		e.lastReject = make(map[string]time.Time)
-	}
-	if time.Since(e.lastReject[key]) < time.Minute {
-		return false
-	}
-	e.lastReject[key] = time.Now()
-	return true
-}
-
 // waitTokenChange blocks until the engine's bearer token is replaced
 // (a refresh landing after a 401) or the timeout passes.
 func (e *Engine) waitTokenChange(timeout time.Duration) bool {
@@ -413,18 +349,6 @@ func (e *Engine) waitTokenChange(timeout time.Duration) bool {
 	return false
 }
 
-// DiagLog returns the diagnostic log, oldest first, each entry prefixed
-// with its local wall-clock time.
-func (e *Engine) DiagLog() []string {
-	e.diagMu.Lock()
-	defer e.diagMu.Unlock()
-	out := make([]string, len(e.diag))
-	for i, ev := range e.diag {
-		out[i] = ev.at.In(diagZone).Format("15:04:05") + " " + ev.msg
-	}
-	return out
-}
-
 // Probe opens one CONNECT stream to the DoH authority and closes it,
 // exercising the full data path (session dial + CONNECT) without user
 // traffic. Run right after Connect: a dead-on-arrival path is healed by
@@ -432,12 +356,10 @@ func (e *Engine) DiagLog() []string {
 func (e *Engine) Probe(ctx context.Context) error {
 	rc, wc, err := e.openH2ConnectStream(ctx, "1.1.1.1:443")
 	if err != nil {
-		e.logDiag("probe connect failed: %v", err)
 		return err
 	}
 	_ = rc.Close()
 	_ = wc.Close()
-	e.logDiag("probe connect ok")
 	return nil
 }
 
@@ -446,7 +368,6 @@ func (e *Engine) Probe(ctx context.Context) error {
 // switched network interfaces (Wi-Fi <-> LTE/5G), or the device slept and
 // woke on a silently-dead path — so the next packet dials immediately.
 func (e *Engine) ResetSession() {
-	e.logDiag("session reset")
 	e.deathMu.Lock()
 	e.preDataDeaths = nil
 	e.deathMu.Unlock()
@@ -487,7 +408,6 @@ func (e *Engine) Stop() {
 	e.closeDoHLocked()
 	e.dohCC = nil
 	e.dohMu.Unlock()
-	e.logDiag("engine stop")
 }
 
 func (e *Engine) Port() int {
@@ -669,17 +589,14 @@ func (e *Engine) relayTCPStream(client net.Conn, cc *http2.ClientConn, authority
 	}
 	if probe.bytes == 0 {
 		if e.notePreDataDeath(cc) {
-			e.logDiag("stream %s died before data (%v) — session evicted", authority, probe.err)
 			e.evictH2Conn(cc)
 		} else {
-			e.logDiag("stream %s died before data (%v) — session kept (strike 1)", authority, probe.err)
 		}
 		return
 	}
 	if !errors.Is(probe.err, io.EOF) {
 		var streamErr http2.StreamError
 		if !errors.As(probe.err, &streamErr) {
-			e.logDiag("stream %s broke mid-data (%v) — session evicted", authority, probe.err)
 			e.evictH2Conn(cc)
 		}
 	}
@@ -849,7 +766,6 @@ func (e *Engine) forwardDNSOverHTTPS(dnsQuery []byte) ([]byte, error) {
 			return resp, nil
 		}
 		lastErr = err
-		e.logDiag("doh exchange failed: %v", err)
 		deadCC := e.dohCC
 		e.closeDoHLocked()
 		e.dohCC = nil
@@ -1097,7 +1013,6 @@ func (e *Engine) ensureH2Session(ctx context.Context) (*http2.ClientConn, string
 	}
 	rawConn, err := rawDialer.DialContext(ctx, "tcp", proxyHost)
 	if err != nil {
-		e.logDiag("h2 dial %s: %v", proxyHost, err)
 		return nil, "", err
 	}
 	configureLowLatencyTCP(rawConn)
@@ -1118,7 +1033,6 @@ func (e *Engine) ensureH2Session(ctx context.Context) (*http2.ClientConn, string
 	}
 	tlsConn := tls.Client(rawConn, tlsCfg)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
-		e.logDiag("h2 tls %s: %v", proxyHost, err)
 		_ = rawConn.Close()
 		return nil, "", err
 	}
@@ -1137,7 +1051,6 @@ func (e *Engine) ensureH2Session(ctx context.Context) (*http2.ClientConn, string
 	e.h2Pool = append(e.h2Pool, h2ConnEntry{cc: newCC, raw: tlsConn})
 	token = e.bearerToken
 	e.mu.Unlock()
-	e.logDiag("h2 session up %s", proxyHost)
 
 	return newCC, token, nil
 }
@@ -1274,7 +1187,6 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 				// pool (and the DoH connection riding it) rather than
 				// evicting just this session — the caller's retry then
 				// dials fresh.
-				e.logDiag("connect %s transport error: %v", targetAuthority, err)
 				e.ResetSession()
 			}
 		}
@@ -1289,9 +1201,6 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		if e.shouldLogReject(targetAuthority, resp.StatusCode) {
-			e.logDiag("connect %s rejected HTTP %d", targetAuthority, resp.StatusCode)
-		}
 		authFired := false
 		if resp.StatusCode == http.StatusUnauthorized {
 			authFired = e.noteAuthFailure()
