@@ -691,17 +691,18 @@ private fun SpecRow(label: String, value: String, valueColor: Color = Ink) {
     }
 }
 
-/** Квота сегментным «барабаном»: 14 ячеек, заполнение — по проценту. */
+/** Квота сегментным «барабаном»: 14 ячеек; любой ненулевой расход зажигает хотя бы одну. */
 @Composable
-private fun QuotaDrum(pct: Int, alarm: Boolean) {
+private fun QuotaDrum(fraction: Double, alarm: Boolean) {
     val segments = 14
-    val filled = (pct * segments + 99) / 100 // ceil: любой расход виден
+    val filled = if (fraction <= 0.0) 0
+        else kotlin.math.ceil(fraction * segments).toInt().coerceIn(1, segments)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(3.dp)
     ) {
         repeat(segments) { i ->
-            val isFilled = i < filled && pct > 0
+            val isFilled = i < filled
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -1351,7 +1352,6 @@ private fun HomeTabScreen(
                         val pct = ((acc.usedBytes.toDouble() / acc.limitBytes.coerceAtLeast(1L).toDouble()) * 100.0)
                             .roundToInt()
                             .coerceIn(0, 100)
-                        val remainingBytes = (acc.limitBytes - acc.usedBytes).coerceAtLeast(0L)
 
                         Column(
                             modifier = Modifier
@@ -1366,13 +1366,16 @@ private fun HomeTabScreen(
                             verticalArrangement = Arrangement.spacedBy(9.dp)
                         ) {
                             AccountPlateHeader(acc = acc, isActive = isActive)
-                            QuotaDrum(pct = pct, alarm = pct >= snap.thresholdPct)
+                            QuotaDrum(
+                                fraction = acc.usedBytes.toDouble() / acc.limitBytes.coerceAtLeast(1L).toDouble(),
+                                alarm = pct >= snap.thresholdPct
+                            )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "ОСТАЛОСЬ: ${CoreBridge.formatBytes(remainingBytes)} ИЗ ${CoreBridge.formatBytes(acc.limitBytes)}",
+                                    text = "ИЗРАСХОДОВАНО: ${CoreBridge.formatBytes(acc.usedBytes)} ИЗ ${CoreBridge.formatBytes(acc.limitBytes)}",
                                     color = InkSoft,
                                     fontSize = 11.sp,
                                     fontFamily = PriborFonts.mono(FontWeight.Normal)
@@ -1742,7 +1745,10 @@ private fun AccountsTabScreen(
                     }
                 }
 
-                QuotaDrum(pct = pct, alarm = pct >= snap.thresholdPct)
+                QuotaDrum(
+                    fraction = acc.usedBytes.toDouble() / acc.limitBytes.coerceAtLeast(1L).toDouble(),
+                    alarm = pct >= snap.thresholdPct
+                )
                 Text(
                     text = "${CoreBridge.formatBytes(acc.usedBytes)} / ${CoreBridge.formatBytes(acc.limitBytes)} ($pct%)",
                     color = InkSoft,
