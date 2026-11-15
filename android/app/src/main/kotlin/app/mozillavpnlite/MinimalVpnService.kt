@@ -332,7 +332,7 @@ class MinimalVpnService : VpnService() {
         fun startCore(context: Context, on: Boolean) {
             try {
                 val offsetMin = java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60000
-                mobile.Mobile.setUTCOffset(offsetMin)
+                mobile.Mobile.setUTCOffset(offsetMin.toLong())
             } catch (_: Throwable) {}
             if (!mobile.Mobile.running()) {
                 val lang = context.resources.configuration.locales[0]?.language ?: "en"
