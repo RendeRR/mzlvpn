@@ -1,80 +1,58 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Home-screen toggle widget, «Прибор» styling: paper plate, ink
-     frame, monospace type. All texts are (re)set from
-     VpnWidgetProvider on every state change; the values here are the
-     offline preview. The whole widget is one big button. -->
+<!-- Home-screen toggle widget, «Прибор» styling, ONE LINE (user's
+     spec 2026-11-15): status square + state text on the left, the
+     short ВКЛ/ВЫКЛ button on the right. No brand header, no hint, no
+     account/host detail. All texts are (re)set from VpnWidgetProvider
+     on every state change; the values here are the offline preview.
+     The whole widget is one big button.
+
+     The status square is a TextView glyph, NOT a bare View with a
+     drawable background: the bare-View version made launcher hosts
+     fail the whole widget with "Can't load widget" (bisected
+     2026-11-15 — the zero-resource diagnostic layout rendered, the
+     full layout did not; the glyph version works). Its color is
+     (re)set from VpnWidgetProvider via setTextColor. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_bg"
-    android:orientation="vertical"
-    android:padding="14dp">
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="10dp">
 
-    <LinearLayout
-        android:layout_width="match_parent"
+    <TextView
+        android:id="@+id/widget_square"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:gravity="center_vertical"
-        android:orientation="horizontal">
-
-        <!-- The status square is a TextView glyph, NOT a bare View
-             with a drawable background: the bare-View version made
-             launcher hosts fail the whole widget with "Can't load
-             widget" (bisected 2026-11-15 — the zero-resource
-             diagnostic layout rendered, this element was the prime
-             structural difference). The color is (re)set from
-             VpnWidgetProvider via setTextColor. -->
-        <TextView
-            android:id="@+id/widget_square"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="■"
-            android:textColor="@color/pribor_ink"
-            android:textSize="11sp" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:fontFamily="monospace"
-            android:text="@string/brand_plate"
-            android:textColor="@color/pribor_ink"
-            android:textSize="13sp"
-            android:textStyle="bold" />
-    </LinearLayout>
+        android:text="■"
+        android:textColor="@color/pribor_ink"
+        android:textSize="11sp" />
 
     <TextView
         android:id="@+id/widget_state"
-        android:layout_width="match_parent"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="10dp"
+        android:layout_marginStart="8dp"
+        android:layout_weight="1"
         android:fontFamily="monospace"
         android:text="@string/state_off"
         android:textColor="@color/pribor_ink"
-        android:textSize="19sp"
+        android:textSize="15sp"
         android:textStyle="bold" />
 
     <TextView
-        android:id="@+id/widget_detail"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="3dp"
-        android:fontFamily="monospace"
-        android:text="@string/widget_hint_tap_on"
-        android:textColor="@color/pribor_ink_soft"
-        android:textSize="12sp" />
-
-    <TextView
         android:id="@+id/widget_action"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="12dp"
+        android:layout_marginStart="10dp"
         android:background="@drawable/widget_btn_signal"
         android:fontFamily="monospace"
         android:gravity="center"
-        android:padding="9dp"
-        android:text="@string/widget_action_connect"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="8dp"
+        android:text="@string/widget_btn_on"
         android:textColor="@color/pribor_paper"
-        android:textSize="14sp"
+        android:textSize="13sp"
         android:textStyle="bold" />
 </LinearLayout>

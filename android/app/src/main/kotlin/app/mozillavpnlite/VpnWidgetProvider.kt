@@ -10,10 +10,11 @@ import android.widget.RemoteViews
 import org.json.JSONObject
 
 /**
- * Home-screen toggle widget. State changes are pushed by
- * MinimalVpnService (start, connected, stop, destroy) through
- * [VpnWidgetViews.refresh]; onUpdate only covers placement and
- * launcher-driven refreshes. The whole widget is one button that
+ * Home-screen toggle widget — one line: status square + state text,
+ * and the short ВКЛ/ВЫКЛ button on the right. State changes are
+ * pushed by MinimalVpnService (start, connected, stop, destroy)
+ * through [VpnWidgetViews.refresh]; onUpdate only covers placement
+ * and launcher-driven refreshes. The whole widget is one button that
  * fires VpnToggleActivity.
  */
 class VpnWidgetProvider : AppWidgetProvider() {
@@ -68,12 +69,10 @@ object VpnWidgetViews {
         when {
             running -> {
                 views.setTextColor(R.id.widget_square, signal)
-                val (state, detail) = connectedTexts(context)
-                views.setTextViewText(R.id.widget_state, state)
-                views.setTextViewText(R.id.widget_detail, detail)
+                views.setTextViewText(R.id.widget_state, connectedState(context))
                 views.setTextViewText(
                     R.id.widget_action,
-                    context.getString(R.string.widget_action_disconnect)
+                    context.getString(R.string.widget_btn_off)
                 )
                 views.setInt(
                     R.id.widget_action,
@@ -88,10 +87,9 @@ object VpnWidgetViews {
                     R.id.widget_state,
                     context.getString(R.string.widget_state_connecting)
                 )
-                views.setTextViewText(R.id.widget_detail, "")
                 views.setTextViewText(
                     R.id.widget_action,
-                    context.getString(R.string.widget_state_connecting)
+                    context.getString(R.string.widget_btn_off)
                 )
                 views.setInt(
                     R.id.widget_action,
@@ -107,12 +105,8 @@ object VpnWidgetViews {
                     context.getString(R.string.state_off)
                 )
                 views.setTextViewText(
-                    R.id.widget_detail,
-                    context.getString(R.string.widget_hint_tap_on)
-                )
-                views.setTextViewText(
                     R.id.widget_action,
-                    context.getString(R.string.widget_action_connect)
+                    context.getString(R.string.widget_btn_on)
                 )
                 views.setInt(
                     R.id.widget_action,
@@ -125,42 +119,17 @@ object VpnWidgetViews {
         return views
     }
 
-    /** Localized "country" headline + "email · host" detail, mirroring
-     *  the foreground notification. Runs only while connected, i.e. in
-     *  the service's process where the core is started. */
-    private fun connectedTexts(context: Context): Pair<String, String> {
+    /** State line while connected: the country CODE only ("DE") —
+     *  the user asked for the code without the country name. Runs
+     *  only in that state, i.e. in the service's process where the
+     *  core is started. */
+    private fun connectedState(context: Context): String {
         return try {
             val root = JSONObject(mobile.Mobile.statusJSON())
-            val loc = root.optJSONObject("location")
-            val isRu = context.resources.configuration.locales[0]?.language == "ru"
-            val country = if (isRu) {
-                loc?.optString("name_ru", "")?.ifBlank { null }
-                    ?: loc?.optString("name", "") ?: ""
-            } else {
-                loc?.optString("name", "") ?: ""
-            }
-            val code = loc?.optString("code", "") ?: ""
-            val host = loc?.optString("server_host", "") ?: ""
-            var email = ""
-            val accs = root.optJSONArray("accounts")
-            if (accs != null) {
-                for (i in 0 until accs.length()) {
-                    val o = accs.optJSONObject(i) ?: continue
-                    if (o.optBoolean("active", false)) {
-                        email = o.optString("email", "")
-                        break
-                    }
-                }
-            }
-            val state = when {
-                country.isNotBlank() && code.isNotBlank() -> "$code · $country"
-                country.isNotBlank() -> country
-                else -> context.getString(R.string.state_on)
-            }
-            val detail = listOf(email, host).filter { it.isNotBlank() }.joinToString(" · ")
-            state to detail
+            val code = root.optJSONObject("location")?.optString("code", "") ?: ""
+            code.ifBlank { context.getString(R.string.state_on) }
         } catch (_: Throwable) {
-            context.getString(R.string.state_on) to ""
+            context.getString(R.string.state_on)
         }
     }
 }

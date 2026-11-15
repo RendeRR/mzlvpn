@@ -110,10 +110,9 @@
     <string name="session_name">Mozilla VPN</string>
     <string name="state_on">ПОДКЛЮЧЕНО</string>
     <string name="widget_description">Включение и отключение Mozilla VPN</string>
-    <string name="widget_action_connect">ВКЛЮЧИТЬ</string>
-    <string name="widget_action_disconnect">ОТКЛЮЧИТЬ</string>
+    <string name="widget_btn_on">ВКЛ</string>
+    <string name="widget_btn_off">ВЫКЛ</string>
     <string name="widget_state_connecting">ПОДКЛЮЧЕНИЕ…</string>
-    <string name="widget_hint_tap_on">Нажмите, чтобы включить</string>
     <string name="shortcut_toggle_short">Вкл/выкл VPN</string>
     <string name="shortcut_toggle_long">Включить или выключить Mozilla VPN</string>
     <string name="toggle_toast_on">Включаю Mozilla VPN…</string>
