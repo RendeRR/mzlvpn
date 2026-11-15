@@ -757,14 +757,21 @@ func (e *Engine) openH2ConnectStream(ctx context.Context, targetAuthority string
 	return resp.Body, pw, nil
 }
 
-// ProbeLatency measures the real 1-RTT latency to a Fastly proxy node.
-// First measures TCP SYN -> SYN-ACK RTT (true 1-RTT network latency) and completes
-// the TLS 1.3 ALPN h2 handshake on the same connection to verify the node is live.
+// ProbeLatency measures the latency to a Fastly proxy node as the total time
+// from the start of the TCP dial until the TLS 1.3 ALPN h2 handshake completes
+// on the same connection (which also verifies the node is live).
 func ProbeLatency(ctx context.Context, proxyEndpoint, _ string) (time.Duration, error) {
 	return ProbeTLSHandshake(ctx, proxyEndpoint)
 }
 
-// ProbeTLSHandshake measures real 1-RTT TCP connect time and verifies TLS 1.3 ALPN h2 support.
+// ProbeTLSHandshake returns the full dial+handshake duration, NOT the bare TCP
+// connect RTT. On networks where a local bypass proxy terminates TCP (e.g.
+// fakeDNS setups that hand out local addresses for the proxy hostnames), the
+// TCP RTT only measures the hop to that local proxy and is identical for every
+// node on earth. The TLS handshake, in contrast, runs end-to-end to the real
+// Fastly node (certificate verified against the real hostname), so its total
+// duration tracks the same path the tunnel itself will take — through the
+// local proxy where one exists, direct where none does.
 func ProbeTLSHandshake(ctx context.Context, proxyEndpoint string) (time.Duration, error) {
 	host, _, err := net.SplitHostPort(proxyEndpoint)
 	if err != nil {
@@ -779,7 +786,6 @@ func ProbeTLSHandshake(ctx context.Context, proxyEndpoint string) (time.Duration
 	if err != nil {
 		return 0, err
 	}
-	tcpRTT := time.Since(start)
 
 	tlsConn := tls.Client(rawConn, &tls.Config{
 		ServerName: host,
@@ -791,8 +797,9 @@ func ProbeTLSHandshake(ctx context.Context, proxyEndpoint string) (time.Duration
 		return 0, err
 	}
 	_ = tlsConn.Close()
-	if tcpRTT < time.Millisecond {
-		tcpRTT = time.Millisecond
+	total := time.Since(start)
+	if total < time.Millisecond {
+		total = time.Millisecond
 	}
-	return tcpRTT, nil
+	return total, nil
 }
