@@ -218,6 +218,7 @@ func (p *Pool) UpdateQuotaFromHeaders(h http.Header) {
 	}
 	if summary := guardian.QuotaHeaderSummary(h); summary != "" {
 		log.Printf("[quota] connect headers: %s", summary)
+		guardian.RecordQuotaEvent("connect", 0, summary, nil)
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -1882,6 +1882,36 @@ private fun AccountsTabScreen(
                     lineHeight = 16.sp
                 )
             }
+
+            SectionLabel(text = "ДИАГНОСТИКА КВОТЫ · ЧТО ПРИСЛАЛ СЕРВЕР")
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Paper)
+                    .border(BorderStroke(1.dp, Ink), RectangleShape)
+                    .padding(13.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (snap.quotaEvents.isEmpty()) {
+                    Text(
+                        text = "Событий пока нет. Полностью остановите приложение и запустите снова — при старте ядро всегда запрашивает токен, и ответ сервера появится здесь.",
+                        color = InkSoft,
+                        fontSize = 12.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.Normal),
+                        lineHeight = 16.sp
+                    )
+                } else {
+                    snap.quotaEvents.forEach { line ->
+                        Text(
+                            text = line,
+                            color = Ink,
+                            fontSize = 11.sp,
+                            fontFamily = PriborFonts.mono(FontWeight.Normal),
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
         }
     }
 }

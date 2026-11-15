@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"mozillavpnlite/core/fxa"
@@ -68,9 +69,70 @@ type ProxyPass struct {
 	Usage     *QuotaUsage `json:"usage,omitempty"`
 }
 
+// QuotaEvent — одно наблюдение заголовков квоты, для диагностики в UI:
+// logcat в gomobile-сборке вывод Go не показывает, поэтому события
+// копятся в кольцевом буфере и отдаются в status JSON.
+type QuotaEvent struct {
+	At      string `json:"at"`
+	Source  string `json:"source"` // "token" | "connect"
+	Status  int    `json:"status"`
+	Summary string `json:"summary"`
+	Error   string `json:"error,omitempty"`
+}
+
+var quotaEventsMu sync.Mutex
+var quotaEvents []QuotaEvent
+
+// RecordQuotaEvent сохраняет событие в кольцевой буфер (последние 8).
+func RecordQuotaEvent(source string, status int, summary string, err error) {
+	errStr := ""
+	if err != nil {
+		errStr = err.Error()
+	}
+	ev := QuotaEvent{
+		At:      time.Now().Format("15:04:05"),
+		Source:  source,
+		Status:  status,
+		Summary: summary,
+		Error:   errStr,
+	}
+	quotaEventsMu.Lock()
+	quotaEvents = append(quotaEvents, ev)
+	if len(quotaEvents) > 8 {
+		quotaEvents = quotaEvents[len(quotaEvents)-8:]
+	}
+	quotaEventsMu.Unlock()
+}
+
+// RecentQuotaEvents возвращает копию кольцевого буфера событий квоты.
+func RecentQuotaEvents() []QuotaEvent {
+	quotaEventsMu.Lock()
+	defer quotaEventsMu.Unlock()
+	return append([]QuotaEvent(nil), quotaEvents...)
+}
+
+var lastTokenMu sync.Mutex
+var lastTokenStatus int
+var lastTokenSummary string
+
 // FetchProxyPass requests a short-lived ProxyPass JWT from /api/v1/fpn/token.
 // If Guardian responds with HTTP 403, it automatically calls /api/v1/fpn/activate and retries.
 func FetchProxyPass(ctx context.Context, accessToken string) (*ProxyPass, error) {
+	lastTokenMu.Lock()
+	lastTokenStatus = 0
+	lastTokenSummary = ""
+	lastTokenMu.Unlock()
+
+	pass, err := fetchProxyPassInternal(ctx, accessToken)
+
+	lastTokenMu.Lock()
+	st, sum := lastTokenStatus, lastTokenSummary
+	lastTokenMu.Unlock()
+	RecordQuotaEvent("token", st, sum, err)
+	return pass, err
+}
+
+func fetchProxyPassInternal(ctx context.Context, accessToken string) (*ProxyPass, error) {
 	pass, err := fetchTokenOnce(ctx, accessToken)
 	if errors.Is(err, ErrNotEntitled) {
 		if actErr := Activate(ctx, accessToken); actErr == nil {
@@ -94,7 +156,12 @@ func fetchTokenOnce(ctx context.Context, accessToken string) (*ProxyPass, error)
 	defer resp.Body.Close()
 
 	usage := ParseQuotaHeaders(resp.Header)
-	log.Printf("[quota] token fetch: status=%d %s", resp.StatusCode, QuotaHeaderSummary(resp.Header))
+	summary := QuotaHeaderSummary(resp.Header)
+	log.Printf("[quota] token fetch: status=%d %s", resp.StatusCode, summary)
+	lastTokenMu.Lock()
+	lastTokenStatus = resp.StatusCode
+	lastTokenSummary = summary
+	lastTokenMu.Unlock()
 	if usage == nil {
 		usage = DefaultQuotaUsage()
 	}
