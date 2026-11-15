@@ -9,12 +9,12 @@
     android:height="62dp"
     android:viewportWidth="62"
     android:viewportHeight="62">
-    <!-- plate -->
+    <!-- plate: rounded square (shape В, chosen by the user) -->
     <path
         android:fillColor="@color/pribor_paper"
         android:strokeColor="@color/pribor_ink"
         android:strokeWidth="3"
-        android:pathData="M1.5,1.5h59v59h-59z" />
+        android:pathData="M14.5,1.5h33a13,13 0 0 1 13,13v33a13,13 0 0 1 -13,13h-33a13,13 0 0 1 -13,-13v-33a13,13 0 0 1 13,-13z" />
     <!-- slider guides: end stops -->
     <path
         android:fillColor="@color/pribor_ink"

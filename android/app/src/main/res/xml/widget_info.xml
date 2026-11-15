@@ -4,5 +4,6 @@
     android:minHeight="64dp"
     android:updatePeriodMillis="0"
     android:initialLayout="@layout/widget_switch"
+    android:previewImage="@drawable/widget_switch_on"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen" />
