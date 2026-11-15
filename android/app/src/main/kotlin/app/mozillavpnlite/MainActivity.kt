@@ -2,6 +2,8 @@ package app.mozillavpnlite
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.Context
+import android.graphics.Typeface
 import android.net.VpnService
 import android.os.Bundle
 import android.webkit.CookieManager
@@ -10,11 +12,13 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -22,31 +26,31 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -56,11 +60,69 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+// ============================================================================
+// ДИЗАЙН «ПРИБОР» — точный инструмент / заводской шильдик, а не «тёмный VPN».
+// Бумага + чернила + один сигнальный оранжевый. Никаких карточек со
+// скруглениями, градиентов и круглых кнопок: волосяные линии, таблицы с
+// точечными лидерами, рубильник вместо кнопки питания.
+//
+// Шрифты (скачиваются Gradle-задачей fetchDesignFonts в assets/fonts,
+// в репозитории бинарники не хранятся):
+//  - Дисплейный: Russo One — кириллица родная, характер технического плаката.
+//    (Zilla Slab от Mozilla кириллицы не содержит вообще — проверено по cmap.)
+//  - Данные: IBM Plex Mono (Regular/Medium/SemiBold), табличные цифры.
+// ============================================================================
+
+private val Paper = Color(0xFFF4F1EA)
+private val PaperDeep = Color(0xFFEBE5D8)
+private val Ink = Color(0xFF17130C)
+private val InkSoft = Color(0xFF6F675A)
+private val Signal = Color(0xFFFF4D00)
+private val Alarm = Color(0xFFB3261E)
+
+private object PriborFonts {
+    var display: FontFamily = FontFamily.Default
+        private set
+    private var monoRegular: FontFamily = FontFamily.Monospace
+    private var monoMedium: FontFamily = FontFamily.Monospace
+    private var monoSemiBold: FontFamily = FontFamily.Monospace
+
+    fun init(context: Context) {
+        display = load(context, "fonts/RussoOne-Regular.ttf", FontFamily.Default)
+        monoRegular = load(context, "fonts/IBMPlexMono-Regular.ttf", FontFamily.Monospace)
+        monoMedium = load(context, "fonts/IBMPlexMono-Medium.ttf", FontFamily.Monospace)
+        monoSemiBold = load(context, "fonts/IBMPlexMono-SemiBold.ttf", FontFamily.Monospace)
+    }
+
+    private fun load(context: Context, path: String, fallback: FontFamily): FontFamily =
+        try {
+            FontFamily(Typeface.createFromAsset(context.assets, path))
+        } catch (e: Exception) {
+            fallback
+        }
+
+    fun mono(weight: FontWeight): FontFamily = when (weight) {
+        FontWeight.SemiBold, FontWeight.Bold -> monoSemiBold
+        FontWeight.Medium -> monoMedium
+        else -> monoRegular
+    }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT
+            ),
+            navigationBarStyle = SystemBarStyle.light(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT
+            )
+        )
         CoreBridge.init(this)
+        PriborFonts.init(this)
 
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -70,17 +132,17 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             MaterialTheme(
-                colorScheme = darkColorScheme(
-                    primary = Color(0xFF6366F1),
-                    background = Color(0xFF090D16),
-                    surface = Color(0xFF0F172A),
-                    onBackground = Color(0xFFF1F5F9),
-                    onSurface = Color(0xFFF1F5F9)
+                colorScheme = lightColorScheme(
+                    primary = Ink,
+                    background = Paper,
+                    surface = Paper,
+                    onBackground = Ink,
+                    onSurface = Ink
                 )
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = Color(0xFF090D16)
+                    color = Paper
                 ) {
                     MozillaVpnLiteApp()
                 }
@@ -180,55 +242,61 @@ fun MozillaVpnLiteApp() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF090D16))
+            .background(Paper)
             .statusBarsPadding()
             .navigationBarsPadding()
     ) {
-        // Top App Bar (matches MinimalAndroidPhone.tsx)
+        // Шильдик: имя прибора слева, состояние — справа.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(54.dp)
-                .background(Color(0xFF060911))
+                .height(52.dp)
                 .padding(horizontal = 20.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                ShieldIcon(
-                    color = Color(0xFF818CF8),
-                    size = 18.dp
+                Box(
+                    modifier = Modifier
+                        .size(9.dp)
+                        .background(if (snap.state == "connected") Signal else Ink)
                 )
                 Text(
-                    text = "Mozilla VPN Lite",
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
+                    text = "MZLVPN · LITE · SER. 001",
+                    color = Ink,
+                    fontSize = 13.sp,
+                    fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                    fontWeight = FontWeight.SemiBold
                 )
             }
 
             if (snap.state == "connected" && activeLocation != null) {
                 Text(
-                    text = "${activeLocation.flag} ${activeLocation.code} · ${CoreBridge.formatPing(activeLocation.latencyMs)}",
-                    color = Color(0xFF34D399),
+                    text = "${activeLocation.code} · ${CoreBridge.formatPing(activeLocation.latencyMs)}",
+                    color = Ink,
                     fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace,
+                    fontFamily = PriborFonts.mono(FontWeight.SemiBold),
                     fontWeight = FontWeight.SemiBold
                 )
             } else {
                 Text(
-                    text = "Отключено",
-                    color = Color(0xFF94A3B8),
+                    text = "ВЫКЛЮЧЕНО",
+                    color = InkSoft,
                     fontSize = 13.sp,
-                    fontFamily = FontFamily.Monospace
+                    fontFamily = PriborFonts.mono(FontWeight.Normal)
                 )
             }
         }
 
-        HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(Ink)
+        )
 
         // Main Screen Content
         Box(
@@ -444,35 +512,36 @@ fun MozillaVpnLiteApp() {
             }
         }
 
-        HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(Ink)
+        )
 
-        // Bottom Navigation Bar (matches MinimalAndroidPhone.tsx)
+        // Нижняя навигация: три подписи в общей рамке, активная — с оранжевым квадратом.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(64.dp)
-                .background(Color(0xFF060911)),
-            horizontalArrangement = Arrangement.SpaceAround,
+                .height(60.dp)
+                .background(Paper),
             verticalAlignment = Alignment.CenterVertically
         ) {
             BottomNavTabItem(
                 selected = tab == 0,
-                label = "Пульт",
-                icon = { color -> PowerIcon(color = color, size = 20.dp) },
+                label = "ПУЛЬТ",
                 onClick = { tab = 0 },
                 modifier = Modifier.weight(1f)
             )
             BottomNavTabItem(
                 selected = tab == 1,
-                label = "Аккаунты  (${snap.accounts.size})",
-                icon = { color -> UsersIcon(color = color, size = 20.dp) },
+                label = "АККАУНТЫ · ${snap.accounts.size}",
                 onClick = { tab = 1 },
                 modifier = Modifier.weight(1f)
             )
             BottomNavTabItem(
                 selected = tab == 2,
-                label = "Серверы  (${snap.locations.size})",
-                icon = { color -> GlobeIcon(color = color, size = 20.dp) },
+                label = "СЕРВЕРЫ · ${snap.locations.size}",
                 onClick = { tab = 2 },
                 modifier = Modifier.weight(1f)
             )
@@ -527,25 +596,29 @@ fun MozillaVpnLiteApp() {
 private fun BottomNavTabItem(
     selected: Boolean,
     label: String,
-    icon: @Composable (Color) -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val contentColor = if (selected) Color(0xFF818CF8) else Color(0xFF94A3B8)
-
-    Column(
+    Row(
         modifier = modifier
             .fillMaxHeight()
             .clickable(onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        icon(contentColor)
-        Spacer(modifier = Modifier.height(4.dp))
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .background(Signal)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
         Text(
             text = label,
-            color = contentColor,
+            color = if (selected) Ink else InkSoft,
             fontSize = 12.sp,
+            fontFamily = PriborFonts.mono(if (selected) FontWeight.SemiBold else FontWeight.Normal),
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -554,7 +627,610 @@ private fun BottomNavTabItem(
 }
 
 // ============================================================================
-// TAB 1: ПУЛЬТ (HOME SCREEN — MATCHES MinimalAndroidPhone.tsx 1:1)
+// ПРИМИТИВЫ «ПРИБОРА»
+// ============================================================================
+
+/** Подпись секции: моно-подпись + волосяная линия. */
+@Composable
+private fun SectionLabel(text: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = text,
+            color = InkSoft,
+            fontSize = 11.sp,
+            fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 2.sp
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(Ink)
+        )
+    }
+}
+
+/** Строка спецификации: ПОДПИСЬ ········ ЗНАЧЕНИЕ. */
+@Composable
+private fun SpecRow(label: String, value: String, valueColor: Color = Ink) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        Text(
+            text = label,
+            color = InkSoft,
+            fontSize = 12.sp,
+            fontFamily = PriborFonts.mono(FontWeight.Normal)
+        )
+        Canvas(
+            modifier = Modifier
+                .weight(1f)
+                .height(12.dp)
+                .padding(horizontal = 8.dp)
+        ) {
+            drawLine(
+                color = InkSoft,
+                start = Offset(0f, size.height - 3f),
+                end = Offset(size.width, size.height - 3f),
+                strokeWidth = 1.5f,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(1f, 5f))
+            )
+        }
+        Text(
+            text = value,
+            color = valueColor,
+            fontSize = 13.sp,
+            fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+/** Квота сегментным «барабаном»: 14 ячеек, заполнение — по проценту. */
+@Composable
+private fun QuotaDrum(pct: Int, alarm: Boolean) {
+    val segments = 14
+    val filled = (pct * segments + 99) / 100 // ceil: любой расход виден
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        repeat(segments) { i ->
+            val isFilled = i < filled && pct > 0
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(14.dp)
+                    .border(BorderStroke(1.dp, Ink), RectangleShape)
+                    .background(
+                        when {
+                            !isFilled -> Paper
+                            alarm -> Signal
+                            else -> Ink
+                        }
+                    )
+            )
+        }
+    }
+}
+
+/**
+ * Рубильник: полоса с ползуном. Выкл — чёрный ползун слева, вкл — оранжевый
+ * справа. Движение ступенчатое, без пружин (tween 140 мс).
+ */
+@Composable
+private fun BreakerSwitch(
+    isOn: Boolean,
+    isConnecting: Boolean,
+    onToggle: () -> Unit
+) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        // Жёсткая тень-пластина.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .offset(x = 6.dp, y = 6.dp)
+                .background(Ink)
+        )
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(66.dp)
+                .background(Paper)
+                .border(BorderStroke(2.dp, Ink), RectangleShape)
+                .clickable(onClick = onToggle)
+        ) {
+            val half = maxWidth / 2
+            val target = when {
+                isConnecting -> half / 2
+                isOn -> half
+                else -> 0.dp
+            }
+            val blockOffset by animateDpAsState(
+                targetValue = target,
+                animationSpec = tween(durationMillis = 140),
+                label = "breakerBlock"
+            )
+            // Ползун.
+            Box(
+                modifier = Modifier
+                    .width(half)
+                    .fillMaxHeight()
+                    .offset(x = blockOffset)
+                    .background(if (isOn) Signal else Ink)
+            )
+            Row(modifier = Modifier.fillMaxSize()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "ВЫКЛ",
+                        color = if (!isOn && !isConnecting) Paper else Ink,
+                        fontSize = 17.sp,
+                        fontFamily = PriborFonts.display,
+                        letterSpacing = 1.sp
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "ВКЛ",
+                        color = if (isOn) Ink else InkSoft,
+                        fontSize = 17.sp,
+                        fontFamily = PriborFonts.display,
+                        letterSpacing = 1.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Чёрная кнопка-пластина с жёсткой тенью. */
+@Composable
+private fun PlateButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    busy: Boolean = false
+) {
+    Box(modifier = modifier) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .offset(x = 5.dp, y = 5.dp)
+                .background(if (enabled) Ink else InkSoft)
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .background(if (enabled) Ink else InkSoft)
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (busy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(17.dp),
+                    color = Paper,
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+            }
+            Text(
+                text = text,
+                color = Paper,
+                fontSize = 14.sp,
+                fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.sp,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/** Вторичная кнопка: бумага в чёрной рамке. */
+@Composable
+private fun GhostButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    Box(
+        modifier = modifier
+            .height(52.dp)
+            .background(Paper)
+            .border(BorderStroke(2.dp, if (enabled) Ink else InkSoft), RectangleShape)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = if (enabled) Ink else InkSoft,
+            fontSize = 14.sp,
+            fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
+            maxLines = 1
+        )
+    }
+}
+
+/** Маленькая чёрная плашка-кнопка для шапок и карточек. */
+@Composable
+private fun SmallPlateButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    busy: Boolean = false
+) {
+    Row(
+        modifier = modifier
+            .background(if (enabled) Ink else InkSoft)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        if (busy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(13.dp),
+                color = Paper,
+                strokeWidth = 2.dp
+            )
+        }
+        Text(
+            text = text,
+            color = Paper,
+            fontSize = 12.sp,
+            fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
+            maxLines = 1
+        )
+    }
+}
+
+/** Поле бланка: подпись сверху, ввод над линейкой (в фокусе — оранжевой). */
+@Composable
+private fun FormField(
+    label: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    trailingText: String? = null,
+    onTrailingClick: (() -> Unit)? = null,
+    placeholder: String? = null
+) {
+    var focused by remember { mutableStateOf(false) }
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Bottom
+        ) {
+            Text(
+                text = label,
+                color = InkSoft,
+                fontSize = 11.sp,
+                fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.5.sp
+            )
+            if (trailingText != null && onTrailingClick != null) {
+                Text(
+                    text = trailingText,
+                    color = Ink,
+                    fontSize = 12.sp,
+                    fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clickable(onClick = onTrailingClick)
+                        .padding(start = 8.dp, bottom = 1.dp)
+                )
+            }
+        }
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            singleLine = true,
+            keyboardOptions = keyboardOptions,
+            visualTransformation = visualTransformation,
+            textStyle = TextStyle(
+                color = Ink,
+                fontSize = 15.sp,
+                fontFamily = PriborFonts.mono(FontWeight.Medium),
+                fontWeight = FontWeight.Medium
+            ),
+            cursorBrush = SolidColor(Signal),
+            modifier = Modifier
+                .fillMaxWidth()
+                .onFocusChanged { focused = it.isFocused },
+            decorationBox = { inner ->
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    if (value.isEmpty() && placeholder != null) {
+                        Text(
+                            text = placeholder,
+                            color = InkSoft,
+                            fontSize = 15.sp,
+                            fontFamily = PriborFonts.mono(FontWeight.Normal)
+                        )
+                    }
+                    inner()
+                }
+            }
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(if (focused) Signal else Ink)
+        )
+    }
+}
+
+/**
+ * Код клетками бланка: поверх невидимого поля ввода рисуется ряд ячеек.
+ * Работает и для 6-значного кода из письма, и для 8-символьной разблокировки.
+ */
+@Composable
+private fun CodeCells(
+    label: String,
+    value: String,
+    length: Int,
+    digitsOnly: Boolean,
+    onValueChange: (String) -> Unit
+) {
+    val focusRequester = remember { FocusRequester() }
+    var focused by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = label,
+            color = InkSoft,
+            fontSize = 11.sp,
+            fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.5.sp
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { focusRequester.requestFocus() }
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(7.dp)
+            ) {
+                repeat(length) { i ->
+                    val ch = value.getOrNull(i)
+                    val isActiveCell = focused && i == value.length
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(0.92f)
+                            .background(Paper)
+                            .border(
+                                BorderStroke(
+                                    if (isActiveCell) 2.dp else 1.5.dp,
+                                    if (isActiveCell) Signal else Ink
+                                ),
+                                RectangleShape
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (ch != null) {
+                            Text(
+                                text = ch.uppercaseChar().toString(),
+                                color = Ink,
+                                fontSize = 19.sp,
+                                fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = { raw ->
+                    val cleaned = if (digitsOnly) raw.filter { it.isDigit() } else raw.filter { !it.isWhitespace() }
+                    if (cleaned.length <= length) onValueChange(cleaned)
+                },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = if (digitsOnly) KeyboardType.Number else KeyboardType.Text,
+                    imeAction = ImeAction.Done
+                ),
+                textStyle = TextStyle(color = Color.Transparent, fontSize = 1.sp),
+                cursorBrush = SolidColor(Color.Transparent),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .alpha(0f)
+                    .focusRequester(focusRequester)
+                    .onFocusChanged { focused = it.isFocused }
+            )
+        }
+    }
+}
+
+/** Сегментный переключатель в виде рубильной полосы (2..3 сегмента). */
+@Composable
+private fun SegmentedBreaker(
+    options: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(BorderStroke(2.dp, Ink), RectangleShape)
+            .background(Paper)
+    ) {
+        options.forEachIndexed { idx, title ->
+            val selected = idx == selectedIndex
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(if (selected) Ink else Paper)
+                    .clickable { onSelect(idx) }
+                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = title,
+                    color = if (selected) Paper else InkSoft,
+                    fontSize = 12.sp,
+                    fontFamily = PriborFonts.mono(if (selected) FontWeight.SemiBold else FontWeight.Normal),
+                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (idx < options.size - 1) {
+                Box(
+                    modifier = Modifier
+                        .width(2.dp)
+                        .height(38.dp)
+                        .background(Ink)
+                )
+            }
+        }
+    }
+}
+
+/** Строка табло локаций: КОД | название/узел | пинг. */
+@Composable
+private fun LocationRow(
+    code: String,
+    title: String,
+    subtitle: String,
+    pingText: String,
+    pingColor: Color = Ink,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (selected) PaperDeep else Paper)
+            .clickable(onClick = onClick)
+            .padding(end = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(6.dp)
+                .height(56.dp)
+                .background(if (selected) Signal else Color.Transparent)
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+            text = code,
+            color = Ink,
+            fontSize = 19.sp,
+            fontFamily = PriborFonts.display,
+            modifier = Modifier.width(54.dp),
+            maxLines = 1
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = title,
+                color = Ink,
+                fontSize = 14.sp,
+                fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = subtitle,
+                color = InkSoft,
+                fontSize = 11.sp,
+                fontFamily = PriborFonts.mono(FontWeight.Normal),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Text(
+            text = pingText,
+            color = pingColor,
+            fontSize = 13.sp,
+            fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+/** Плашка аккаунта для главного экрана и вкладки аккаунтов (общая часть). */
+@Composable
+private fun AccountPlateHeader(acc: AccountItem, isActive: Boolean) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        if (isActive) {
+            Box(
+                modifier = Modifier
+                    .size(9.dp)
+                    .background(Signal)
+            )
+        }
+        Text(
+            text = "#${acc.position}",
+            color = InkSoft,
+            fontSize = 13.sp,
+            fontFamily = PriborFonts.mono(FontWeight.Normal)
+        )
+        Text(
+            text = acc.email,
+            color = Ink,
+            fontSize = 14.sp,
+            fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = when {
+                isActive -> "АКТИВЕН"
+                acc.exhausted -> "КВОТА ИСЧЕРПАНА"
+                else -> "ГОТОВ"
+            },
+            color = if (isActive) Ink else InkSoft,
+            fontSize = 11.sp,
+            fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+// ============================================================================
+// TAB 1: ПУЛЬТ (HOME)
 // ============================================================================
 @Composable
 private fun HomeTabScreen(
@@ -567,253 +1243,127 @@ private fun HomeTabScreen(
     onSelectLocation: (String) -> Unit
 ) {
     val isConnected = snap.state == "connected"
-    val heroBorderColor by animateColorAsState(
-        targetValue = if (isConnected) Color(0xFF6366F1).copy(alpha = 0.6f) else Color(0xFF1E293B),
-        label = "heroBorder"
-    )
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 20.dp),
         contentPadding = PaddingValues(vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp)
+        verticalArrangement = Arrangement.spacedBy(22.dp)
     ) {
-        // 1. Hero Connection Control (matches MinimalAndroidPhone.tsx lines 128-179)
+        // 1. Состояние словом + спецификация + рубильник.
         item {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0xFF060911))
-                    .border(BorderStroke(1.dp, heroBorderColor), RoundedCornerShape(20.dp))
-                    .padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // 96dp Circular Power Button
-                Box(
-                    modifier = Modifier
-                        .size(96.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                isConnecting -> Color(0xFF4F46E5).copy(alpha = 0.35f)
-                                isConnected -> Color(0xFF4F46E5)
-                                else -> Color(0xFF0F172A)
-                            }
-                        )
-                        .border(
-                            BorderStroke(
-                                2.dp,
-                                when {
-                                    isConnecting -> Color(0xFF818CF8)
-                                    isConnected -> Color(0xFF818CF8)
-                                    else -> Color(0xFF334155)
-                                }
-                            ),
-                            CircleShape
-                        )
-                        .clickable(onClick = onToggleTunnel),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (isConnecting) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(36.dp),
-                            color = Color.White,
-                            strokeWidth = 3.dp
-                        )
-                    } else {
-                        PowerIcon(
-                            color = if (isConnected) Color.White else Color(0xFF94A3B8),
-                            size = 40.dp
-                        )
-                    }
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    text = when {
+                        isConnecting -> "ПОДКЛЮЧЕНИЕ"
+                        isConnected -> "ПОДКЛЮЧЕНО"
+                        else -> "ВЫКЛЮЧЕНО"
+                    },
+                    color = Ink,
+                    fontSize = 38.sp,
+                    fontFamily = PriborFonts.display,
+                    maxLines = 1
+                )
 
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .size(9.dp)
+                            .background(
+                                when {
+                                    isConnecting -> Ink
+                                    isConnected -> Signal
+                                    else -> InkSoft
+                                }
+                            )
+                    )
                     Text(
                         text = when {
-                            isConnecting -> "Подключение…"
-                            isConnected -> "Подключено · ${activeLocation?.name ?: "Германия"}"
-                            else -> "Туннель отключён"
+                            isConnecting -> "УСТАНОВКА СОЕДИНЕНИЯ…"
+                            isConnected -> "ТУННЕЛЬ АКТИВЕН"
+                            else -> "ТУННЕЛЬ НЕАКТИВЕН"
                         },
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
+                        color = InkSoft,
+                        fontSize = 12.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 1.5.sp
                     )
+                }
 
-                    if (activeLocation != null) {
-                        Text(
-                            text = "${activeLocation.host}:${activeLocation.port} · ${CoreBridge.formatPing(activeLocation.latencyMs)}",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 13.sp,
-                            fontFamily = FontFamily.Monospace,
-                            textAlign = TextAlign.Center
+                if (activeLocation != null) {
+                    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        SpecRow("ЛОКАЦИЯ", "${activeLocation.name.uppercase()} · ${activeLocation.code}")
+                        SpecRow("СЕРВЕР", "${activeLocation.host}:${activeLocation.port}")
+                        SpecRow("ПИНГ", CoreBridge.formatPing(activeLocation.latencyMs))
+                        SpecRow(
+                            "ПРОТОКОЛ",
+                            if (snap.protocol == "h3") "HTTP/3 MASQUE" else "HTTP/2 CONNECT"
                         )
                     }
                 }
 
-                // Protocol Segmented Switch (HTTP/3 MASQUE vs HTTP/2 CONNECT)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF0F172A))
-                        .border(BorderStroke(1.dp, Color(0xFF1E293B)), RoundedCornerShape(12.dp))
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    val isH3 = snap.protocol == "h3"
-                    // HTTP/2 first: it is the default and the only transport
-                    // that actually works on Russian networks (HTTP/3/QUIC
-                    // is throttled by ISPs).
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (!isH3) Color(0xFF1E293B) else Color.Transparent)
-                            .clickable { onProtocolChange("h2") }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "HTTP/2 CONNECT",
-                            color = if (!isH3) Color.White else Color(0xFF94A3B8),
-                            fontSize = 13.sp,
-                            fontWeight = if (!isH3) FontWeight.SemiBold else FontWeight.Medium
-                        )
-                    }
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(if (isH3) Color(0xFF1E293B) else Color.Transparent)
-                            .clickable { onProtocolChange("h3") }
-                            .padding(vertical = 10.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "HTTP/3 MASQUE",
-                            color = if (isH3) Color.White else Color(0xFF94A3B8),
-                            fontSize = 13.sp,
-                            fontWeight = if (isH3) FontWeight.SemiBold else FontWeight.Medium
-                        )
-                    }
-                }
+                BreakerSwitch(
+                    isOn = isConnected,
+                    isConnecting = isConnecting,
+                    onToggle = onToggleTunnel
+                )
+
+                // Протокол: HTTP/2 первым — он по умолчанию и единственный
+                // рабочий вариант (HTTP/3/QUIC во многих сетях нестабилен).
+                SegmentedBreaker(
+                    options = listOf("HTTP/2 CONNECT", "HTTP/3 MASQUE"),
+                    selectedIndex = if (snap.protocol == "h3") 1 else 0,
+                    onSelect = { idx -> onProtocolChange(if (idx == 1) "h3" else "h2") }
+                )
             }
         }
 
-        // 2. Instant 1-Tap Mozilla Profile Switcher (no header label, matches MinimalAndroidPhone.tsx lines 182-242)
+        // 2. Аккаунты — компактные паспорта с барабаном квоты.
         if (snap.accounts.isNotEmpty()) {
             item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionLabel("АККАУНТЫ · ${snap.accounts.size}")
                     snap.accounts.forEachIndexed { idx, acc ->
                         val isActive = idx == snap.activeAccount
                         val pct = ((acc.usedBytes.toDouble() / acc.limitBytes.coerceAtLeast(1L).toDouble()) * 100.0)
                             .roundToInt()
                             .coerceIn(0, 100)
                         val remainingBytes = (acc.limitBytes - acc.usedBytes).coerceAtLeast(0L)
-                        val barColor = when {
-                            pct >= snap.thresholdPct -> Color(0xFFF43F5E)
-                            pct >= 75 -> Color(0xFFFBBF24)
-                            else -> Color(0xFF6366F1)
-                        }
 
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(
-                                    if (isActive) Color(0xFF4F46E5).copy(alpha = 0.15f)
-                                    else Color(0xFF060911).copy(alpha = 0.6f)
-                                )
+                                .background(Paper)
                                 .border(
-                                    BorderStroke(
-                                        1.dp,
-                                        if (isActive) Color(0xFF6366F1).copy(alpha = 0.8f)
-                                        else Color(0xFF1E293B)
-                                    ),
-                                    RoundedCornerShape(16.dp)
+                                    BorderStroke(if (isActive) 2.dp else 1.dp, Ink),
+                                    RectangleShape
                                 )
                                 .clickable { onSelectAccount(idx) }
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                                .padding(13.dp),
+                            verticalArrangement = Arrangement.spacedBy(9.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Text(
-                                        text = "#${acc.position}",
-                                        color = Color(0xFF94A3B8),
-                                        fontSize = 13.sp,
-                                        fontFamily = FontFamily.Monospace
-                                    )
-                                    Text(
-                                        text = acc.email,
-                                        color = Color.White,
-                                        fontSize = 15.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-
-                                Text(
-                                    text = when {
-                                        isActive -> "Активен"
-                                        acc.exhausted -> "Квота исчерпана"
-                                        else -> "Готов"
-                                    },
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 13.sp,
-                                    fontFamily = FontFamily.Monospace
-                                )
-                            }
-
-                            // Quota Progress Bar
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(6.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF1E293B))
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth(pct / 100f)
-                                        .fillMaxHeight()
-                                        .clip(CircleShape)
-                                        .background(barColor)
-                                )
-                            }
-
+                            AccountPlateHeader(acc = acc, isActive = isActive)
+                            QuotaDrum(pct = pct, alarm = pct >= snap.thresholdPct)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = "Осталось: ${CoreBridge.formatBytes(remainingBytes)} из ${CoreBridge.formatBytes(acc.limitBytes)}",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace
+                                    text = "ОСТАЛОСЬ: ${CoreBridge.formatBytes(remainingBytes)} ИЗ ${CoreBridge.formatBytes(acc.limitBytes)}",
+                                    color = InkSoft,
+                                    fontSize = 11.sp,
+                                    fontFamily = PriborFonts.mono(FontWeight.Normal)
                                 )
                                 Text(
-                                    text = "$pct% · порог ${snap.thresholdPct}%",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace
+                                    text = "$pct% · ПОРОГ ${snap.thresholdPct}%",
+                                    color = InkSoft,
+                                    fontSize = 11.sp,
+                                    fontFamily = PriborFonts.mono(FontWeight.Normal)
                                 )
                             }
                         }
@@ -822,77 +1372,40 @@ private fun HomeTabScreen(
             }
         }
 
-        // 3. Instant 1-Tap Server / Location Switcher (no header label, stacked layout matching MinimalAndroidPhone.tsx lines 245-296)
+        // 3. Быстрые локации — строки табло.
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                val topFive = snap.locations.take(5)
-
-                // Row 1: Fastest + Location 0
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SectionLabel("ЛОКАЦИИ · БЫСТРЫЕ")
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(BorderStroke(1.dp, Ink), RectangleShape)
                 ) {
-                    val isFastestSelected = snap.selectedLocation == "fastest"
-                    QuickLocationTile(
-                        flag = "⚡",
+                    LocationRow(
+                        code = "АВТО",
                         title = "Быстрейший",
                         subtitle = "Авто пинг",
-                        selected = isFastestSelected,
-                        onClick = { onSelectLocation("fastest") },
-                        modifier = Modifier.weight(1f)
+                        pingText = "",
+                        selected = snap.selectedLocation == "fastest",
+                        onClick = { onSelectLocation("fastest") }
                     )
-                    if (topFive.isNotEmpty()) {
-                        val loc0 = topFive[0]
-                        val selected0 = snap.selectedLocation.equals(loc0.code, ignoreCase = true) ||
-                            (snap.selectedLocation == "recommended" && loc0.code.equals("DE", ignoreCase = true))
-                        QuickLocationTile(
-                            flag = loc0.flag,
-                            title = loc0.name,
-                            subtitle = CoreBridge.formatPing(loc0.latencyMs),
-                            selected = selected0,
-                            onClick = { onSelectLocation(loc0.code) },
-                            modifier = Modifier.weight(1f)
+                    snap.locations.take(5).forEach { loc ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(Ink)
                         )
-                    }
-                }
-
-                // Row 2: Location 1 + Location 2
-                if (topFive.size >= 3) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(topFive[1], topFive[2]).forEach { loc ->
-                            val isSelected = snap.selectedLocation.equals(loc.code, ignoreCase = true)
-                            QuickLocationTile(
-                                flag = loc.flag,
-                                title = loc.name,
-                                subtitle = CoreBridge.formatPing(loc.latencyMs),
-                                selected = isSelected,
-                                onClick = { onSelectLocation(loc.code) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-
-                // Row 3: Location 3 + Location 4
-                if (topFive.size >= 5) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(topFive[3], topFive[4]).forEach { loc ->
-                            val isSelected = snap.selectedLocation.equals(loc.code, ignoreCase = true)
-                            QuickLocationTile(
-                                flag = loc.flag,
-                                title = loc.name,
-                                subtitle = CoreBridge.formatPing(loc.latencyMs),
-                                selected = isSelected,
-                                onClick = { onSelectLocation(loc.code) },
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
+                        val selected = snap.selectedLocation.equals(loc.code, ignoreCase = true) ||
+                            (snap.selectedLocation == "recommended" && loc.code.equals("DE", ignoreCase = true))
+                        LocationRow(
+                            code = loc.code,
+                            title = loc.name,
+                            subtitle = loc.city,
+                            pingText = CoreBridge.formatPing(loc.latencyMs),
+                            selected = selected,
+                            onClick = { onSelectLocation(loc.code) }
+                        )
                     }
                 }
             }
@@ -900,62 +1413,8 @@ private fun HomeTabScreen(
     }
 }
 
-@Composable
-private fun QuickLocationTile(
-    flag: String,
-    title: String,
-    subtitle: String,
-    selected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier
-            .heightIn(min = 58.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(
-                if (selected) Color(0xFF4F46E5).copy(alpha = 0.15f)
-                else Color(0xFF060911).copy(alpha = 0.6f)
-            )
-            .border(
-                BorderStroke(
-                    1.dp,
-                    if (selected) Color(0xFF6366F1)
-                    else Color(0xFF1E293B)
-                ),
-                RoundedCornerShape(14.dp)
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        Text(text = flag, fontSize = 18.sp)
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = title,
-                color = Color.White,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = subtitle,
-                color = Color(0xFF94A3B8),
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1
-            )
-        }
-    }
-}
-
 // ============================================================================
-// TAB 2: АККАУНТЫ (ACCOUNTS & ROTATION SCREEN)
+// TAB 2: АККАУНТЫ
 // ============================================================================
 @Composable
 private fun AccountsTabScreen(
@@ -998,97 +1457,83 @@ private fun AccountsTabScreen(
         contentPadding = PaddingValues(vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Header Row (matches MinimalAndroidPhone.tsx lines 305-322)
+        // Шапка вкладки.
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Профили Mozilla (${snap.accounts.size})",
-                        color = Color.White,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold
+                        text = "АККАУНТЫ",
+                        color = Ink,
+                        fontSize = 30.sp,
+                        fontFamily = PriborFonts.display
                     )
-                    Text(
-                        text = "Каждый аккаунт даёт 5 ГБ/мес · Авто-смена по очереди",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 13.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(10.dp))
-
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFF4F46E5))
-                        .clickable(onClick = onToggleAddForm)
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
-                ) {
-                    Text(
-                        text = if (showAddForm) "Закрыть" else "+ Добавить",
-                        color = Color.White,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
+                    SmallPlateButton(
+                        text = if (showAddForm) "ЗАКРЫТЬ" else "+ ДОБАВИТЬ",
+                        onClick = onToggleAddForm
                     )
                 }
+                Text(
+                    text = "ПРОФИЛИ MOZILLA · ${snap.accounts.size} · КАЖДЫЙ ДАЁТ 5 ГБ/МЕС · АВТО-СМЕНА ПО ОЧЕРЕДИ",
+                    color = InkSoft,
+                    fontSize = 11.sp,
+                    fontFamily = PriborFonts.mono(FontWeight.Normal),
+                    lineHeight = 15.sp
+                )
             }
         }
 
-        // Status / Error Feedback Banner
+        // Баннер обратной связи.
         if (!authMessage.isNullOrBlank()) {
             item {
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(
-                            if (authIsError) Color(0xFFEF4444).copy(alpha = 0.15f)
-                            else Color(0xFF10B981).copy(alpha = 0.15f)
-                        )
                         .border(
-                            BorderStroke(
-                                1.dp,
-                                if (authIsError) Color(0xFFEF4444).copy(alpha = 0.4f)
-                                else Color(0xFF10B981).copy(alpha = 0.4f)
-                            ),
-                            RoundedCornerShape(14.dp)
+                            BorderStroke(2.dp, if (authIsError) Alarm else Ink),
+                            RectangleShape
                         )
-                        .padding(14.dp)
+                        .background(Paper)
                 ) {
+                    Box(
+                        modifier = Modifier
+                            .width(7.dp)
+                            .height(54.dp)
+                            .background(if (authIsError) Alarm else Signal)
+                    )
                     Text(
                         text = authMessage,
-                        color = if (authIsError) Color(0xFFFCA5A5) else Color(0xFF6EE7B7),
+                        color = Ink,
                         fontSize = 13.sp,
-                        lineHeight = 18.sp
+                        fontFamily = PriborFonts.mono(FontWeight.Normal),
+                        lineHeight = 18.sp,
+                        modifier = Modifier.padding(13.dp)
                     )
                 }
             }
         }
 
-        // Add Account Form
+        // Бланк добавления аккаунта.
         if (showAddForm || snap.accounts.isEmpty() || authStepState != "idle") {
             item {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(Color(0xFF060911))
-                        .border(BorderStroke(1.dp, Color(0xFF1E293B)), RoundedCornerShape(18.dp))
+                        .background(Paper)
+                        .border(BorderStroke(2.dp, Ink), RectangleShape)
                         .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     Text(
-                        text = "Добавление аккаунта Firefox (Mozilla VPN)",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
+                        text = "ДОБАВЛЕНИЕ АККАУНТА FIREFOX (MOZILLA VPN)",
+                        color = Ink,
+                        fontSize = 13.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = 17.sp
                     )
 
                     if (authStepState == "verify_email" || authStepState == "verify_totp") {
@@ -1097,249 +1542,134 @@ private fun AccountsTabScreen(
                                 "Введите 6-значный код двухфакторной аутентификации (2FA TOTP):"
                             else
                                 "Введите 6-значный код подтверждения входа из письма от Mozilla:",
-                            color = Color(0xFFE2E8F0),
+                            color = Ink,
                             fontSize = 13.sp,
+                            fontFamily = PriborFonts.mono(FontWeight.Normal),
                             lineHeight = 18.sp
                         )
 
-                        OutlinedTextField(
+                        CodeCells(
+                            label = "КОД · 6 ЦИФР",
                             value = verifyCodeInput,
-                            onValueChange = onVerifyCodeChange,
-                            label = { Text("6-значный код из письма Mozilla", fontSize = 13.sp) },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Number,
-                                imeAction = ImeAction.Done
-                            ),
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
+                            length = 6,
+                            digitsOnly = true,
+                            onValueChange = onVerifyCodeChange
                         )
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            OutlinedButton(
+                            GhostButton(
+                                text = "НАЗАД",
                                 onClick = onCancelVerifyStep,
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("Назад", fontSize = 13.sp, color = Color(0xFFCBD5E1))
-                            }
-
-                            Button(
+                                modifier = Modifier.weight(1f)
+                            )
+                            PlateButton(
+                                text = "ПОДТВЕРДИТЬ КОД",
                                 onClick = onSubmitVerifyCode,
                                 enabled = !isSigningIn,
-                                modifier = Modifier.weight(2f),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5))
-                            ) {
-                                if (isSigningIn) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(16.dp),
-                                        color = Color.White,
-                                        strokeWidth = 2.dp
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                }
-                                Text(
-                                    "Подтвердить код",
-                                    fontSize = 13.sp,
-                                    color = Color.White,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                            }
+                                busy = isSigningIn,
+                                modifier = Modifier.weight(2f)
+                            )
                         }
                     } else {
-                        // 3-Mode Auth Selector
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF0F172A))
-                                .border(BorderStroke(1.dp, Color(0xFF1E293B)), RoundedCornerShape(12.dp))
-                                .padding(4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            val methods = listOf(
-                                0 to "Прямой вход",
-                                1 to "Браузер",
-                                2 to "Токен"
-                            )
-                            methods.forEach { (id, title) ->
-                                val selected = authMethod == id
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(if (selected) Color(0xFF1E293B) else Color.Transparent)
-                                        .clickable { onAuthMethodChange(id) }
-                                        .padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = title,
-                                        color = if (selected) Color.White else Color(0xFF94A3B8),
-                                        fontSize = 13.sp,
-                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                        maxLines = 1
-                                    )
-                                }
-                            }
-                        }
+                        SegmentedBreaker(
+                            options = listOf("Прямой вход", "Браузер", "Токен"),
+                            selectedIndex = authMethod,
+                            onSelect = onAuthMethodChange
+                        )
 
                         when (authMethod) {
                             0 -> {
-                                OutlinedTextField(
+                                FormField(
+                                    label = "EMAIL АККАУНТА MOZILLA",
                                     value = emailInput,
                                     onValueChange = onEmailChange,
-                                    label = { Text("Email аккаунта Mozilla", fontSize = 13.sp) },
-                                    singleLine = true,
                                     keyboardOptions = KeyboardOptions(
                                         keyboardType = KeyboardType.Email,
                                         imeAction = ImeAction.Next
-                                    ),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
+                                    )
                                 )
 
-                                OutlinedTextField(
+                                FormField(
+                                    label = "ПАРОЛЬ АККАУНТА",
                                     value = passwordInput,
                                     onValueChange = onPasswordChange,
-                                    label = { Text("Пароль аккаунта", fontSize = 13.sp) },
-                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Password,
+                                        imeAction = ImeAction.Done
+                                    ),
                                     visualTransformation = if (showPassword) {
                                         VisualTransformation.None
                                     } else {
                                         PasswordVisualTransformation()
                                     },
-                                    keyboardOptions = KeyboardOptions(
-                                        keyboardType = KeyboardType.Password,
-                                        imeAction = ImeAction.Done
-                                    ),
-                                    trailingIcon = {
-                                        Text(
-                                            text = if (showPassword) "Скрыть" else "Показать",
-                                            color = Color(0xFF818CF8),
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            modifier = Modifier
-                                                .clickable(onClick = onToggleShowPassword)
-                                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                                        )
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
+                                    trailingText = if (showPassword) "СКРЫТЬ" else "ПОКАЗАТЬ",
+                                    onTrailingClick = onToggleShowPassword
                                 )
 
                                 if (authStepState == "unblock_code") {
-                                    OutlinedTextField(
+                                    CodeCells(
+                                        label = "КОД РАЗБЛОКИРОВКИ ИЗ ПИСЬМА · 8 СИМВОЛОВ",
                                         value = unblockCodeInput,
-                                        onValueChange = onUnblockCodeChange,
-                                        label = { Text("Код разблокировки из письма (8 символов)", fontSize = 13.sp) },
-                                        singleLine = true,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(12.dp)
+                                        length = 8,
+                                        digitsOnly = false,
+                                        onValueChange = onUnblockCodeChange
                                     )
                                 }
 
-                                Button(
+                                PlateButton(
+                                    text = if (isSigningIn) "ВХОД В АККАУНТ MOZILLA…" else "СОХРАНИТЬ И ПОЛУЧИТЬ PROXYPASS",
                                     onClick = onSubmitPasswordLogin,
                                     enabled = !isSigningIn && emailInput.isNotBlank() && passwordInput.isNotEmpty(),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(48.dp),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color(0xFF4F46E5),
-                                        disabledContainerColor = Color(0xFF4F46E5).copy(alpha = 0.4f)
-                                    )
-                                ) {
-                                    if (isSigningIn) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(18.dp),
-                                            color = Color.White,
-                                            strokeWidth = 2.dp
-                                        )
-                                        Spacer(modifier = Modifier.width(10.dp))
-                                        Text(
-                                            "Вход в аккаунт Mozilla…",
-                                            fontSize = 14.sp,
-                                            color = Color.White,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    } else {
-                                        Text(
-                                            "Сохранить и получить ProxyPass",
-                                            fontSize = 14.sp,
-                                            color = Color.White,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                }
+                                    busy = isSigningIn,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
 
                             1 -> {
                                 Text(
                                     text = "Откроется окно входа accounts.firefox.com. После ввода пароля приложение перехватит токен и предложит ввести 6-значный код из письма Mozilla.",
-                                    color = Color(0xFF94A3B8),
+                                    color = InkSoft,
                                     fontSize = 13.sp,
+                                    fontFamily = PriborFonts.mono(FontWeight.Normal),
                                     lineHeight = 18.sp
                                 )
 
-                                Button(
+                                PlateButton(
+                                    text = "ОТКРЫТЬ ВХОД MOZILLA (WEBVIEW)",
                                     onClick = onOpenBrowserSignIn,
                                     enabled = !isSigningIn,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(48.dp),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5))
-                                ) {
-                                    Text(
-                                        text = "Открыть вход Mozilla (WebView)",
-                                        fontSize = 14.sp,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
 
                             2 -> {
-                                OutlinedTextField(
+                                FormField(
+                                    label = "EMAIL АККАУНТА (НЕОБЯЗАТЕЛЬНО)",
                                     value = emailInput,
                                     onValueChange = onEmailChange,
-                                    label = { Text("Email аккаунта (необязательно)", fontSize = 13.sp) },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Email,
+                                        imeAction = ImeAction.Next
+                                    )
                                 )
 
-                                OutlinedTextField(
+                                FormField(
+                                    label = "64-HEX SESSIONTOKEN ИЗ WEBCHANNEL",
                                     value = sessionTokenInput,
                                     onValueChange = onSessionTokenChange,
-                                    label = { Text("64-hex sessionToken из WebChannel", fontSize = 13.sp) },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
                                 )
 
-                                Button(
+                                PlateButton(
+                                    text = "СОХРАНИТЬ И ПОЛУЧИТЬ PROXYPASS",
                                     onClick = onSubmitSessionToken,
                                     enabled = !isSigningIn && sessionTokenInput.trim().length >= 32,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(48.dp),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5))
-                                ) {
-                                    Text(
-                                        text = "Сохранить и получить ProxyPass",
-                                        fontSize = 14.sp,
-                                        color = Color.White,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
+                                    busy = isSigningIn,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
                         }
                     }
@@ -1347,7 +1677,7 @@ private fun AccountsTabScreen(
             }
         }
 
-        // Account Cards List (matches MinimalAndroidPhone.tsx lines 408-519)
+        // Паспорта аккаунтов.
         itemsIndexed(snap.accounts) { idx, acc ->
             val isActive = idx == snap.activeAccount
             val pct = ((acc.usedBytes.toDouble() / acc.limitBytes.coerceAtLeast(1L).toDouble()) * 100.0)
@@ -1357,21 +1687,13 @@ private fun AccountsTabScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(
-                        if (isActive) Color(0xFF4F46E5).copy(alpha = 0.15f)
-                        else Color(0xFF060911).copy(alpha = 0.7f)
-                    )
+                    .background(Paper)
                     .border(
-                        BorderStroke(
-                            1.dp,
-                            if (isActive) Color(0xFF6366F1).copy(alpha = 0.8f)
-                            else Color(0xFF1E293B)
-                        ),
-                        RoundedCornerShape(18.dp)
+                        BorderStroke(if (isActive) 2.dp else 1.dp, Ink),
+                        RectangleShape
                     )
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                    .padding(15.dp),
+                verticalArrangement = Arrangement.spacedBy(11.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1382,96 +1704,41 @@ private fun AccountsTabScreen(
                         modifier = Modifier
                             .weight(1f)
                             .clickable { onSelectAccount(idx) },
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = "#${acc.position}",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 13.sp,
-                                fontFamily = FontFamily.Monospace
-                            )
-                            Text(
-                                text = acc.email,
-                                color = Color.White,
-                                fontSize = 15.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                        AccountPlateHeader(acc = acc, isActive = isActive)
                         Text(
-                            text = if (isActive) "Активный профиль" else if (acc.exhausted) "В резерве до сброса" else "В очереди ротации",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace
+                            text = if (isActive) "АКТИВНЫЙ ПРОФИЛЬ" else if (acc.exhausted) "В РЕЗЕРВЕ ДО СБРОСА" else "В ОЧЕРЕДИ РОТАЦИИ",
+                            color = InkSoft,
+                            fontSize = 11.sp,
+                            fontFamily = PriborFonts.mono(FontWeight.Normal),
+                            letterSpacing = 1.sp
                         )
                     }
 
                     if (!isActive) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF4F46E5))
-                                .clickable { onSelectAccount(idx) }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "Включить",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    } else {
-                        Text(
-                            text = "✓ Используется",
-                            color = Color(0xFFA5B4FC),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
+                        SmallPlateButton(
+                            text = "ВКЛЮЧИТЬ",
+                            onClick = { onSelectAccount(idx) }
                         )
                     }
                 }
 
-                // Quota Progress Bar
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF1E293B))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(pct / 100f)
-                                .fillMaxHeight()
-                                .clip(CircleShape)
-                                .background(
-                                    if (pct >= snap.thresholdPct) Color(0xFFF43F5E)
-                                    else Color(0xFF6366F1)
-                                )
-                        )
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "${CoreBridge.formatBytes(acc.usedBytes)} / ${CoreBridge.formatBytes(acc.limitBytes)} ($pct%)",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace
-                        )
-                    }
-                }
+                QuotaDrum(pct = pct, alarm = pct >= snap.thresholdPct)
+                Text(
+                    text = "${CoreBridge.formatBytes(acc.usedBytes)} / ${CoreBridge.formatBytes(acc.limitBytes)} ($pct%)",
+                    color = InkSoft,
+                    fontSize = 12.sp,
+                    fontFamily = PriborFonts.mono(FontWeight.Normal)
+                )
 
-                HorizontalDivider(color = Color(0xFF1E293B), thickness = 1.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(1.dp)
+                        .background(Ink)
+                )
 
-                // Priority Up/Down, Rotation Toggle, Delete
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1483,72 +1750,71 @@ private fun AccountsTabScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF0F172A))
+                                .border(BorderStroke(1.dp, if (idx > 0) Ink else InkSoft), RectangleShape)
                                 .clickable(enabled = idx > 0) { onMoveAccount(idx, -1) }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .padding(horizontal = 11.dp, vertical = 6.dp)
                         ) {
                             Text(
                                 text = "↑",
-                                color = if (idx > 0) Color(0xFFCBD5E1) else Color(0xFF475569),
+                                color = if (idx > 0) Ink else InkSoft,
                                 fontSize = 14.sp
                             )
                         }
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF0F172A))
+                                .border(
+                                    BorderStroke(1.dp, if (idx < snap.accounts.size - 1) Ink else InkSoft),
+                                    RectangleShape
+                                )
                                 .clickable(enabled = idx < snap.accounts.size - 1) { onMoveAccount(idx, 1) }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .padding(horizontal = 11.dp, vertical = 6.dp)
                         ) {
                             Text(
                                 text = "↓",
-                                color = if (idx < snap.accounts.size - 1) Color(0xFFCBD5E1) else Color(0xFF475569),
+                                color = if (idx < snap.accounts.size - 1) Ink else InkSoft,
                                 fontSize = 14.sp
                             )
                         }
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF0F172A))
+                                .background(if (acc.enabled) Ink else Paper)
+                                .border(BorderStroke(1.dp, Ink), RectangleShape)
                                 .clickable { onToggleAccountEnabled(idx) }
-                                .padding(horizontal = 12.dp, vertical = 6.dp)
+                                .padding(horizontal = 11.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = if (acc.enabled) "В ротации" else "Отключён",
-                                color = Color(0xFFCBD5E1),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
+                                text = if (acc.enabled) "В РОТАЦИИ" else "ОТКЛЮЧЁН",
+                                color = if (acc.enabled) Paper else InkSoft,
+                                fontSize = 11.sp,
+                                fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                                fontWeight = FontWeight.SemiBold
                             )
                         }
                     }
 
-                    Box(
+                    Text(
+                        text = "УДАЛИТЬ",
+                        color = Alarm,
+                        fontSize = 12.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                        fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
                             .clickable { onRemoveAccount(idx) }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "Удалить",
-                            color = Color(0xFF94A3B8),
-                            fontSize = 13.sp
-                        )
-                    }
+                            .padding(horizontal = 6.dp, vertical = 6.dp)
+                    )
                 }
             }
         }
 
-        // Threshold Slider Card (matches MinimalAndroidPhone.tsx lines 522-544)
+        // Порог авто-переключения.
         item {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(Color(0xFF060911).copy(alpha = 0.7f))
-                    .border(BorderStroke(1.dp, Color(0xFF1E293B)), RoundedCornerShape(18.dp))
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .background(Paper)
+                    .border(BorderStroke(1.dp, Ink), RectangleShape)
+                    .padding(15.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1556,17 +1822,19 @@ private fun AccountsTabScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Порог авто-переключения аккаунта",
-                        color = Color(0xFFE2E8F0),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold
+                        text = "ПОРОГ АВТО-ПЕРЕКЛЮЧЕНИЯ АККАУНТА",
+                        color = Ink,
+                        fontSize = 12.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
                     )
                     Text(
-                        text = "${snap.thresholdPct}% квоты",
-                        color = Color(0xFF818CF8),
+                        text = "${snap.thresholdPct}% КВОТЫ",
+                        color = Ink,
                         fontSize = 13.sp,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
+                        fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
 
@@ -1576,16 +1844,17 @@ private fun AccountsTabScreen(
                     valueRange = 50f..100f,
                     steps = 9,
                     colors = SliderDefaults.colors(
-                        thumbColor = Color(0xFF6366F1),
-                        activeTrackColor = Color(0xFF6366F1),
-                        inactiveTrackColor = Color(0xFF1E293B)
+                        thumbColor = Ink,
+                        activeTrackColor = Ink,
+                        inactiveTrackColor = PaperDeep
                     )
                 )
 
                 Text(
                     text = "При достижении ${snap.thresholdPct}% из 5 ГБ ядро автоматически запрашивает ProxyPass следующего аккаунта в списке.",
-                    color = Color(0xFF94A3B8),
+                    color = InkSoft,
                     fontSize = 12.sp,
+                    fontFamily = PriborFonts.mono(FontWeight.Normal),
                     lineHeight = 16.sp
                 )
             }
@@ -1594,7 +1863,7 @@ private fun AccountsTabScreen(
 }
 
 // ============================================================================
-// TAB 3: СЕРВЕРЫ (32 LOCATIONS SCREEN — MATCHES MinimalAndroidPhone.tsx)
+// TAB 3: СЕРВЕРЫ (ЛОКАЦИИ)
 // ============================================================================
 @Composable
 private fun ServersTabScreen(
@@ -1625,7 +1894,6 @@ private fun ServersTabScreen(
             .padding(horizontal = 20.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Header + Ping Button (matches MinimalAndroidPhone.tsx lines 553-571)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1633,67 +1901,42 @@ private fun ServersTabScreen(
         ) {
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
+                verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 Text(
-                    text = "Локации Mozilla (${snap.locations.size})",
-                    color = Color.White,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold
+                    text = "ЛОКАЦИИ",
+                    color = Ink,
+                    fontSize = 30.sp,
+                    fontFamily = PriborFonts.display
                 )
                 Text(
-                    text = "Все страны из vpn-serverlist разблокированы",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 13.sp
+                    text = "ЛОКАЦИИ MOZILLA · ${snap.locations.size} · ВСЕ СТРАНЫ ИЗ VPN-SERVERLIST РАЗБЛОКИРОВАНЫ",
+                    color = InkSoft,
+                    fontSize = 11.sp,
+                    fontFamily = PriborFonts.mono(FontWeight.Normal),
+                    lineHeight = 15.sp
                 )
             }
 
             Spacer(modifier = Modifier.width(10.dp))
 
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0xFF4F46E5))
-                    .clickable(enabled = !isPinging, onClick = onPingAll)
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                if (isPinging) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(14.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
-                    )
-                } else {
-                    Text(text = "↻", color = Color.White, fontSize = 14.sp)
-                }
-                Text(
-                    text = "Пинг",
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
+            SmallPlateButton(
+                text = if (isPinging) "ПИНГ…" else "↻ ПИНГ",
+                onClick = onPingAll,
+                enabled = !isPinging,
+                busy = isPinging
+            )
         }
 
-        // Search Box
-        OutlinedTextField(
+        FormField(
+            label = "ПОИСК",
             value = searchQuery,
             onValueChange = onSearchChange,
-            placeholder = {
-                Text(
-                    "Поиск страны, города или Fastly-узла…",
-                    fontSize = 13.sp,
-                    color = Color(0xFF64748B)
-                )
-            },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp)
+            placeholder = "Страна, город или Fastly-узел…",
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
         )
 
-        // 2-Column Smart Modes (Recommended & Fastest)
+        // Режимы: рекомендуемый / быстрейший — две пластины табло.
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1701,144 +1944,101 @@ private fun ServersTabScreen(
             val isRecommended = snap.selectedLocation == "recommended"
             val isFastest = snap.selectedLocation == "fastest"
 
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(
-                        if (isRecommended) Color(0xFF4F46E5).copy(alpha = 0.2f)
-                        else Color(0xFF060911).copy(alpha = 0.6f)
-                    )
-                    .border(
-                        BorderStroke(
-                            1.dp,
-                            if (isRecommended) Color(0xFF6366F1)
-                            else Color(0xFF1E293B)
-                        ),
-                        RoundedCornerShape(14.dp)
-                    )
-                    .clickable { onSelectLocation("recommended") }
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                Text(
-                    text = "Рекомендуемый",
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Anycast (REC)",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 12.sp
-                )
-            }
-
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(
-                        if (isFastest) Color(0xFF4F46E5).copy(alpha = 0.2f)
-                        else Color(0xFF060911).copy(alpha = 0.6f)
-                    )
-                    .border(
-                        BorderStroke(
-                            1.dp,
-                            if (isFastest) Color(0xFF6366F1)
-                            else Color(0xFF1E293B)
-                        ),
-                        RoundedCornerShape(14.dp)
-                    )
-                    .clickable { onSelectLocation("fastest") }
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(3.dp)
-            ) {
-                Text(
-                    text = "⚡ Быстрейший",
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "Мин. задержка",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 12.sp
-                )
-            }
+            ModePlate(
+                title = "РЕКОМЕНДУЕМЫЙ",
+                subtitle = "Anycast (REC)",
+                selected = isRecommended,
+                onClick = { onSelectLocation("recommended") },
+                modifier = Modifier.weight(1f)
+            )
+            ModePlate(
+                title = "БЫСТРЕЙШИЙ",
+                subtitle = "Мин. задержка",
+                selected = isFastest,
+                onClick = { onSelectLocation("fastest") },
+                modifier = Modifier.weight(1f)
+            )
         }
 
-        // Scrollable 32-Country List
+        // Табло локаций.
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF060911).copy(alpha = 0.6f))
-                .border(BorderStroke(1.dp, Color(0xFF1E293B)), RoundedCornerShape(16.dp))
+                .border(BorderStroke(1.dp, Ink), RectangleShape)
+                .background(Paper)
         ) {
             itemsIndexed(filteredLocations, key = { _, it -> it.code }) { idx, loc ->
                 val isSelected = snap.selectedLocation.equals(loc.code, ignoreCase = true)
-                val latencyColor = when {
-                    loc.latencyMs <= 0 -> Color(0xFF64748B)
-                    loc.latencyMs < 65 -> Color(0xFF34D399)
-                    loc.latencyMs < 140 -> Color(0xFFFBBF24)
-                    else -> Color(0xFF94A3B8)
+                val pingColor = when {
+                    loc.latencyMs <= 0 -> InkSoft
+                    loc.latencyMs >= 140 -> Signal
+                    else -> Ink
                 }
 
-                Column {
-                    Row(
+                LocationRow(
+                    code = loc.code,
+                    title = loc.name,
+                    subtitle = "${loc.city} · ${loc.host}",
+                    pingText = CoreBridge.formatPing(loc.latencyMs),
+                    pingColor = pingColor,
+                    selected = isSelected,
+                    onClick = { onSelectLocation(loc.code) }
+                )
+
+                if (idx < filteredLocations.size - 1) {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(
-                                if (isSelected) Color(0xFF4F46E5).copy(alpha = 0.15f)
-                                else Color.Transparent
-                            )
-                            .clickable { onSelectLocation(loc.code) }
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(text = loc.flag, fontSize = 22.sp)
-                            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(
-                                    text = loc.name,
-                                    color = Color.White,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                Text(
-                                    text = "${loc.city} · ${loc.host}",
-                                    color = Color(0xFF94A3B8),
-                                    fontSize = 12.sp,
-                                    fontFamily = FontFamily.Monospace,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        Text(
-                            text = CoreBridge.formatPing(loc.latencyMs),
-                            color = latencyColor,
-                            fontSize = 13.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-
-                    if (idx < filteredLocations.size - 1) {
-                        HorizontalDivider(color = Color(0xFF1E293B).copy(alpha = 0.7f), thickness = 1.dp)
-                    }
+                            .height(1.dp)
+                            .background(Ink)
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ModePlate(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .background(if (selected) PaperDeep else Paper)
+            .border(BorderStroke(if (selected) 2.dp else 1.dp, Ink), RectangleShape)
+            .clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(6.dp)
+                .height(58.dp)
+                .background(if (selected) Signal else Color.Transparent)
+        )
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp)
+        ) {
+            Text(
+                text = title,
+                color = Ink,
+                fontSize = 13.sp,
+                fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
+            Text(
+                text = subtitle,
+                color = InkSoft,
+                fontSize = 11.sp,
+                fontFamily = PriborFonts.mono(FontWeight.Normal),
+                maxLines = 1
+            )
         }
     }
 }
@@ -1865,37 +2065,51 @@ private fun FxaWebViewDialog(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF090D16))
+                .background(Paper)
                 .statusBarsPadding()
                 .navigationBarsPadding()
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF060911))
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column {
                     Text(
-                        text = "Вход в аккаунт Mozilla",
-                        color = Color.White,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
+                        text = "ВХОД В АККАУНТ MOZILLA",
+                        color = Ink,
+                        fontSize = 14.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                        fontWeight = FontWeight.SemiBold
                     )
                     Text(
                         text = "accounts.firefox.com",
-                        color = Color(0xFF94A3B8),
+                        color = InkSoft,
                         fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace
+                        fontFamily = PriborFonts.mono(FontWeight.Normal)
                     )
                 }
 
-                TextButton(onClick = onDismiss) {
-                    Text("Закрыть", color = Color(0xFF818CF8), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                }
+                Text(
+                    text = "ЗАКРЫТЬ",
+                    color = Ink,
+                    fontSize = 13.sp,
+                    fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clickable(onClick = onDismiss)
+                        .padding(6.dp)
+                )
             }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .background(Ink)
+            )
 
             AndroidView(
                 modifier = Modifier
@@ -2024,103 +2238,5 @@ private fun FxaWebViewDialog(
                 }
             )
         }
-    }
-}
-
-// ============================================================================
-// CUSTOM VECTOR CANVAS ICONS
-// ============================================================================
-@Composable
-private fun PowerIcon(color: Color, size: Dp) {
-    Canvas(modifier = Modifier.size(size)) {
-        val stroke = size.toPx() * 0.10f
-        val r = (this.size.minDimension - stroke) * 0.42f
-        val center = Offset(this.size.width / 2f, this.size.height / 2f)
-        drawArc(
-            color = color,
-            startAngle = -55f,
-            sweepAngle = 290f,
-            useCenter = false,
-            topLeft = Offset(center.x - r, center.y - r),
-            size = Size(r * 2f, r * 2f),
-            style = Stroke(width = stroke, cap = StrokeCap.Round)
-        )
-        drawLine(
-            color = color,
-            start = Offset(center.x, center.y - r * 1.05f),
-            end = Offset(center.x, center.y - r * 0.15f),
-            strokeWidth = stroke,
-            cap = StrokeCap.Round
-        )
-    }
-}
-
-@Composable
-private fun ShieldIcon(color: Color, size: Dp) {
-    Canvas(modifier = Modifier.size(size)) {
-        val stroke = size.toPx() * 0.12f
-        val w = this.size.width
-        val h = this.size.height
-        val path = androidx.compose.ui.graphics.Path().apply {
-            moveTo(w * 0.5f, h * 0.1f)
-            lineTo(w * 0.85f, h * 0.25f)
-            lineTo(w * 0.85f, h * 0.55f)
-            quadraticTo(w * 0.85f, h * 0.82f, w * 0.5f, h * 0.92f)
-            quadraticTo(w * 0.15f, h * 0.82f, w * 0.15f, h * 0.55f)
-            lineTo(w * 0.15f, h * 0.25f)
-            close()
-        }
-        drawPath(path = path, color = color, style = Stroke(width = stroke, cap = StrokeCap.Round))
-    }
-}
-
-@Composable
-private fun UsersIcon(color: Color, size: Dp) {
-    Canvas(modifier = Modifier.size(size)) {
-        val stroke = size.toPx() * 0.11f
-        val w = this.size.width
-        val h = this.size.height
-        drawCircle(
-            color = color,
-            radius = w * 0.18f,
-            center = Offset(w * 0.5f, h * 0.34f),
-            style = Stroke(width = stroke)
-        )
-        drawArc(
-            color = color,
-            startAngle = 200f,
-            sweepAngle = 140f,
-            useCenter = false,
-            topLeft = Offset(w * 0.2f, h * 0.55f),
-            size = Size(w * 0.6f, h * 0.45f),
-            style = Stroke(width = stroke, cap = StrokeCap.Round)
-        )
-    }
-}
-
-@Composable
-private fun GlobeIcon(color: Color, size: Dp) {
-    Canvas(modifier = Modifier.size(size)) {
-        val stroke = size.toPx() * 0.10f
-        val r = (this.size.minDimension - stroke) * 0.42f
-        val center = Offset(this.size.width / 2f, this.size.height / 2f)
-        drawCircle(
-            color = color,
-            radius = r,
-            center = center,
-            style = Stroke(width = stroke)
-        )
-        drawLine(
-            color = color,
-            start = Offset(center.x - r, center.y),
-            end = Offset(center.x + r, center.y),
-            strokeWidth = stroke
-        )
-        drawOval(
-            color = color,
-            topLeft = Offset(center.x - r * 0.48f, center.y - r),
-            size = Size(r * 0.96f, r * 2f),
-            style = Stroke(width = stroke)
-        )
     }
 }

@@ -94,3 +94,40 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }
+
+// Design «Прибор» fonts are binaries, so they are not stored in the repo:
+// they are fetched into assets/fonts before every build (and gitignored).
+// Display: Russo One (Cyrillic native). Data: IBM Plex Mono.
+// A failed fetch never breaks the build — the app falls back to system
+// fonts at runtime (see PriborFonts in MainActivity.kt).
+val designFontFiles = listOf(
+    "RussoOne-Regular.ttf" to "https://raw.githubusercontent.com/google/fonts/main/ofl/russoone/RussoOne-Regular.ttf",
+    "IBMPlexMono-Regular.ttf" to "https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexmono/IBMPlexMono-Regular.ttf",
+    "IBMPlexMono-Medium.ttf" to "https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexmono/IBMPlexMono-Medium.ttf",
+    "IBMPlexMono-SemiBold.ttf" to "https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexmono/IBMPlexMono-SemiBold.ttf"
+)
+
+tasks.register("fetchDesignFonts") {
+    val fontsDir = layout.projectDirectory.dir("src/main/assets/fonts")
+    outputs.dir(fontsDir)
+    doLast {
+        designFontFiles.forEach { (name, url) ->
+            val out = fontsDir.file(name).asFile
+            if (!out.exists() || out.length() == 0L) {
+                out.parentFile.mkdirs()
+                try {
+                    java.net.URL(url).openStream().use { input ->
+                        out.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    logger.lifecycle("Fetched design font $name (${out.length()} bytes)")
+                } catch (e: Exception) {
+                    logger.warn("Design font $name could not be fetched (${e.message}); runtime fallback will be used")
+                }
+            }
+        }
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn("fetchDesignFonts")
+}

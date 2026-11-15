@@ -1,19 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Дизайн «Прибор»: рубильник на заводском шильдике.
+     Рамка-табличка, направляющие рубильника, оранжевая зона слева,
+     чёрный ползун справа, оранжевая «заклёпка» в углу. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Outer Indigo Shield -->
+    <!-- Рамка шильдика -->
     <path
-        android:fillColor="#6366F1"
-        android:pathData="M54,24L80,35V53C80,70.5 68.9,85.6 54,91C39.1,85.6 28,70.5 28,53V35L54,24Z" />
-    <!-- Inner Dark Core Shield -->
+        android:fillColor="#00000000"
+        android:strokeColor="#17130C"
+        android:strokeWidth="2.5"
+        android:pathData="M27,27h54v54h-54z" />
+    <!-- Направляющие рубильника: торцевые упоры -->
     <path
-        android:fillColor="#0F172A"
-        android:pathData="M54,30.5L74,39V53C74,67.2 65.5,79.8 54,84.5C42.5,79.8 34,67.2 34,53V39L54,30.5Z" />
-    <!-- Fastly MASQUE Lightning / Tunnel Mark -->
+        android:fillColor="#17130C"
+        android:pathData="M33,45h3.5v18H33z" />
     <path
-        android:fillColor="#A5B4FC"
-        android:pathData="M56.5,39L43,56H53L50.5,72L65,54H54.5L56.5,39Z" />
+        android:fillColor="#17130C"
+        android:pathData="M71.5,45H75v18h-3.5z" />
+    <!-- Направляющие: верхняя и нижняя шины -->
+    <path
+        android:fillColor="#17130C"
+        android:pathData="M33,45h42v2.5H33z" />
+    <path
+        android:fillColor="#17130C"
+        android:pathData="M33,60.5h42V63H33z" />
+    <!-- Оранжевая зона ВКЛ -->
+    <path
+        android:fillColor="#FF4D00"
+        android:pathData="M36.5,47.5H54v13H36.5z" />
+    <!-- Ползун -->
+    <path
+        android:fillColor="#17130C"
+        android:pathData="M52,46h18v16H52z" />
+    <!-- Заклёпка -->
+    <path
+        android:fillColor="#FF4D00"
+        android:pathData="M73,73h6v6h-6z" />
 </vector>
