@@ -1,1 +1,339 @@
-cGFja2FnZSB0dW5uZWwKCmltcG9ydCAoCgkiY3J5cHRvL3JhbmQiCgkiY3J5cHRvL3JzYSIKCSJjcnlwdG8vdGxzIgoJImNyeXB0by94NTA5IgoJImNyeXB0by94NTA5L3BraXgiCgkiZW5jb2RpbmcvYmluYXJ5IgoJImlvIgoJIm1hdGgvYmlnIgoJIm5ldCIKCSJuZXQvaHR0cCIKCSJzdHJjb252IgoJInN5bmMiCgkidGVzdGluZyIKCSJ0aW1lIgoKCSJnb2xhbmcub3JnL3gvbmV0L2h0dHAyIgopCgovLyBmbHVzaFdyaXRlciBmbHVzaGVzIGFmdGVyIGV2ZXJ5IHdyaXRlIHNvIENPTk5FQ1QgZWNobyBzdHJlYW1zIGJlaGF2ZQovLyBpbnRlcmFjdGl2ZWx5IGluc3RlYWQgb2YgYnVmZmVyaW5nIHVudGlsIGNsb3NlLgp0eXBlIGZsdXNoV3JpdGVyIHN0cnVjdHsgdyBodHRwLlJlc3BvbnNlV3JpdGVyIH0KCmZ1bmMgKGZ3IGZsdXNoV3JpdGVyKSBXcml0ZShwIFtdYnl0ZSkgKGludCwgZXJyb3IpIHsKCW4sIGVyciA6PSBmdy53LldyaXRlKHApCglpZiBmLCBvayA6PSBmdy53LihodHRwLkZsdXNoZXIpOyBvayB7CgkJZi5GbHVzaCgpCgl9CglyZXR1cm4gbiwgZXJyCn0KCnR5cGUgdGVzdFByb3h5IHN0cnVjdCB7CglhZGRyICAgICAgICBzdHJpbmcKCW11ICAgICAgICAgIHN5bmMuTXV0ZXgKCWF1dGhvcml0aWVzIFtdc3RyaW5nCglhdXRoSGVhZGVycyBbXXN0cmluZwoJcmVqZWN0SG9zdHMgbWFwW3N0cmluZ11ib29sCglsbiAgICAgICAgICBuZXQuTGlzdGVuZXIKfQoKZnVuYyBzdGFydFRlc3RQcm94eSh0ICp0ZXN0aW5nLlQpICp0ZXN0UHJveHkgewoJdC5IZWxwZXIoKQoKCWtleSwgZXJyIDo9IHJzYS5HZW5lcmF0ZUtleShyYW5kLlJlYWRlciwgMjA0OCkKCWlmIGVyciAhPSBuaWwgewoJCXQuRmF0YWwoZXJyKQoJfQoJdG1wbCA6PSAmeDUwOS5DZXJ0aWZpY2F0ZXsKCQlTZXJpYWxOdW1iZXI6IGJpZy5OZXdJbnQoMSksCgkJU3ViamVjdDogICAgICBwa2l4Lk5hbWV7Q29tbW9uTmFtZTogIjEyNy4wLjAuMSJ9LAoJCU5vdEJlZm9yZTogICAgdGltZS5Ob3coKS5BZGQoLXRpbWUuSG91ciksCgkJTm90QWZ0ZXI6ICAgICB0aW1lLk5vdygpLkFkZCh0aW1lLkhvdXIpLAoJCUtleVVzYWdlOiAgICAgeDUwOS5LZXlVc2FnZURpZ2l0YWxTaWduYXR1cmUgfCB4NTA5LktleVVzYWdlS2V5RW5jaXBoZXJtZW50LAoJCUV4dEtleVVzYWdlOiAgW114NTA5LkV4dEtleVVzYWdle3g1MDkuRXh0S2V5VXNhZ2VTZXJ2ZXJBdXRofSwKCQlJUEFkZHJlc3NlczogIFtdbmV0LklQe25ldC5QYXJzZUlQKCIxMjcuMC4wLjEiKX0sCgkJRE5TTmFtZXM6ICAgICBbXXN0cmluZ3sibG9jYWxob3N0In0sCgl9CglkZXIsIGVyciA6PSB4NTA5LkNyZWF0ZUNlcnRpZmljYXRlKHJhbmQuUmVhZGVyLCB0bXBsLCB0bXBsLCAma2V5LlB1YmxpY0tleSwga2V5KQoJaWYgZXJyICE9IG5pbCB7CgkJdC5GYXRhbChlcnIpCgl9CgljZXJ0IDo9IHRscy5DZXJ0aWZpY2F0ZXtDZXJ0aWZpY2F0ZTogW11bXWJ5dGV7ZGVyfSwgUHJpdmF0ZUtleToga2V5fQoKCXAgOj0gJnRlc3RQcm94eXtyZWplY3RIb3N0czogbWFwW3N0cmluZ11ib29se319CgloYW5kbGVyIDo9IGh0dHAuSGFuZGxlckZ1bmMoZnVuYyh3IGh0dHAuUmVzcG9uc2VXcml0ZXIsIHIgKmh0dHAuUmVxdWVzdCkgewoJCWlmIHIuTWV0aG9kICE9IGh0dHAuTWV0aG9kQ29ubmVjdCB7CgkJCWh0dHAuTm90Rm91bmQodywgcikKCQkJcmV0dXJuCgkJfQoJCXAubXUuTG9jaygpCgkJcC5hdXRob3JpdGllcyA9IGFwcGVuZChwLmF1dGhvcml0aWVzLCByLkhvc3QpCgkJcC5hdXRoSGVhZGVycyA9IGFwcGVuZChwLmF1dGhIZWFkZXJzLCByLkhlYWRlci5HZXQoIlByb3h5LUF1dGhvcml6YXRpb24iKSkKCQlyZWplY3QgOj0gcC5yZWplY3RIb3N0c1tyLkhvc3RdCgkJcC5tdS5VbmxvY2soKQoJCWlmIHJlamVjdCB7CgkJCXcuV3JpdGVIZWFkZXIoaHR0cC5TdGF0dXNGb3JiaWRkZW4pCgkJCXJldHVybgoJCX0KCQl3LldyaXRlSGVhZGVyKGh0dHAuU3RhdHVzT0spCgkJaWYgZiwgb2sgOj0gdy4oaHR0cC5GbHVzaGVyKTsgb2sgewoJCQlmLkZsdXNoKCkKCQl9CgkJaWYgci5Ib3N0ID09ICIxLjEuMS4xOjUzIiB7CgkJCS8vIEROUy1vdmVyLVRDUCBlbmRwb2ludDogZWNobyB0aGUgZnJhbWVkIHF1ZXJ5IGJhY2sgYXMgdGhlIHJlc3BvbnNlLgoJCQl2YXIgbGVuQnVmIFsyXWJ5dGUKCQkJaWYgXywgZXJyIDo9IGlvLlJlYWRGdWxsKHIuQm9keSwgbGVuQnVmWzpdKTsgZXJyICE9IG5pbCB7CgkJCQlyZXR1cm4KCQkJfQoJCQluIDo9IGludChiaW5hcnkuQmlnRW5kaWFuLlVpbnQxNihsZW5CdWZbOl0pKQoJCQlxdWVyeSA6PSBtYWtlKFtdYnl0ZSwgbikKCQkJaWYgXywgZXJyIDo9IGlvLlJlYWRGdWxsKHIuQm9keSwgcXVlcnkpOyBlcnIgIT0gbmlsIHsKCQkJCXJldHVybgoJCQl9CgkJCWZ3IDo9IGZsdXNoV3JpdGVye3d9CgkJCV8sIF8gPSBmdy5Xcml0ZShsZW5CdWZbOl0pCgkJCV8sIF8gPSBmdy5Xcml0ZShxdWVyeSkKCQkJcmV0dXJuCgkJfQoJCS8vIEdlbmVyaWMgdGFyZ2V0OiBieXRlIGVjaG8uCgkJXywgXyA9IGlvLkNvcHkoZmx1c2hXcml0ZXJ7d30sIHIuQm9keSkKCX0pCgoJdGxzTG4sIGVyciA6PSB0bHMuTGlzdGVuKCJ0Y3AiLCAiMTI3LjAuMC4xOjAiLCAmdGxzLkNvbmZpZ3sKCQlDZXJ0aWZpY2F0ZXM6IFtddGxzLkNlcnRpZmljYXRle2NlcnR9LAoJCU5leHRQcm90b3M6ICAgW11zdHJpbmd7ImgyIn0sCgl9KQoJaWYgZXJyICE9IG5pbCB7CgkJdC5GYXRhbChlcnIpCgl9CglwLmxuID0gdGxzTG4KCXAuYWRkciA9IHRsc0xuLkFkZHIoKS5TdHJpbmcoKQoKCWdvIGZ1bmMoKSB7CgkJc3J2IDo9ICZodHRwMi5TZXJ2ZXJ7fQoJCWZvciB7CgkJCWNvbm4sIGVyciA6PSB0bHNMbi5BY2NlcHQoKQoJCQlpZiBlcnIgIT0gbmlsIHsKCQkJCXJldHVybgoJCQl9CgkJCWdvIGZ1bmMoKSB7CgkJCQkvLyBodHRwMi5TZXJ2ZXIuU2VydmVDb25uIHJlcXVpcmVzIHRoZSBUTFMgaGFuZHNoYWtlIChhbmQgdGh1cwoJCQkJLy8gQUxQTiAiaDIiIG5lZ290aWF0aW9uKSB0byBiZSBjb21wbGV0ZSBiZWZvcmUgaXQgcnVucy4KCQkJCWlmIHRjLCBvayA6PSBjb25uLigqdGxzLkNvbm4pOyBvayB7CgkJCQkJaWYgZXJyIDo9IHRjLkhhbmRzaGFrZSgpOyBlcnIgIT0gbmlsIHsKCQkJCQkJcmV0dXJuCgkJCQkJfQoJCQkJfQoJCQkJc3J2LlNlcnZlQ29ubihjb25uLCAmaHR0cDIuU2VydmVDb25uT3B0c3tIYW5kbGVyOiBoYW5kbGVyfSkKCQkJfSgpCgkJfQoJfSgpCgl0LkNsZWFudXAoZnVuYygpIHsgXyA9IHRsc0xuLkNsb3NlKCkgfSkKCXJldHVybiBwCn0KCmZ1bmMgc3RhcnRUZXN0RW5naW5lKHQgKnRlc3RpbmcuVCwgcHJveHkgKnRlc3RQcm94eSkgKCpFbmdpbmUsIGludCkgewoJdC5IZWxwZXIoKQoJZSA6PSBOZXdFbmdpbmUoKQoJZS50bHNDZmcgPSAmdGxzLkNvbmZpZ3sKCQlJbnNlY3VyZVNraXBWZXJpZnk6IHRydWUsIC8vIHRlc3Qtb25seSBzZWxmLXNpZ25lZCBwcm94eSBjZXJ0CgkJTmV4dFByb3RvczogICAgICAgICBbXXN0cmluZ3siaDIifSwKCX0KCXBvcnQsIGVyciA6PSBlLlN0YXJ0KCIxMjcuMC4wLjE6MCIsIHByb3h5LmFkZHIsICJ0ZXN0LXRva2VuIikKCWlmIGVyciAhPSBuaWwgewoJCXQuRmF0YWwoZXJyKQoJfQoJdC5DbGVhbnVwKGUuU3RvcCkKCXJldHVybiBlLCBwb3J0Cn0KCmZ1bmMgc29ja3NHcmVldGluZyh0ICp0ZXN0aW5nLlQsIGNvbm4gbmV0LkNvbm4pIHsKCXQuSGVscGVyKCkKCWlmIF8sIGVyciA6PSBjb25uLldyaXRlKFtdYnl0ZXsweDA1LCAweDAxLCAweDAwfSk7IGVyciAhPSBuaWwgewoJCXQuRmF0YWwoZXJyKQoJfQoJcmVzcCA6PSBtYWtlKFtdYnl0ZSwgMikKCWlmIF8sIGVyciA6PSBpby5SZWFkRnVsbChjb25uLCByZXNwKTsgZXJyICE9IG5pbCB7CgkJdC5GYXRhbChlcnIpCgl9CglpZiByZXNwWzBdICE9IDB4MDUgfHwgcmVzcFsxXSAhPSAweDAwIHsKCQl0LkZhdGFsZigiYmFkIGdyZWV0aW5nIHJlcGx5ICV2IiwgcmVzcCkKCX0KfQoKZnVuYyBzb2Nrc1JlcXVlc3QodCAqdGVzdGluZy5ULCBjb25uIG5ldC5Db25uLCBjbWQgYnl0ZSwgaXAgbmV0LklQLCBwb3J0IHVpbnQxNikgYnl0ZSB7Cgl0LkhlbHBlcigpCglyZXEgOj0gW11ieXRlezB4MDUsIGNtZCwgMHgwMCwgMHgwMX0KCXJlcSA9IGFwcGVuZChyZXEsIGlwLlRvNCgpLi4uKQoJdmFyIHBiIFsyXWJ5dGUKCWJpbmFyeS5CaWdFbmRpYW4uUHV0VWludDE2KHBiWzpdLCBwb3J0KQoJcmVxID0gYXBwZW5kKHJlcSwgcGJbOl0uLi4pCglpZiBfLCBlcnIgOj0gY29ubi5Xcml0ZShyZXEpOyBlcnIgIT0gbmlsIHsKCQl0LkZhdGFsKGVycikKCX0KCXJlc3AgOj0gbWFrZShbXWJ5dGUsIDEwKQoJaWYgXywgZXJyIDo9IGlvLlJlYWRGdWxsKGNvbm4sIHJlc3ApOyBlcnIgIT0gbmlsIHsKCQl0LkZhdGFsKGVycikKCX0KCWlmIHJlc3BbMF0gIT0gMHgwNSB7CgkJdC5GYXRhbGYoImJhZCByZXBseSB2ZXJzaW9uICVkIiwgcmVzcFswXSkKCX0KCXJldHVybiByZXNwWzFdCn0KCmZ1bmMgZGlhbFNvY2tzKHQgKnRlc3RpbmcuVCwgcG9ydCBpbnQpIG5ldC5Db25uIHsKCXQuSGVscGVyKCkKCWNvbm4sIGVyciA6PSBuZXQuRGlhbFRpbWVvdXQoInRjcCIsIG5ldC5Kb2luSG9zdFBvcnQoIjEyNy4wLjAuMSIsIHN0cmNvbnYuSXRvYShwb3J0KSksIDMqdGltZS5TZWNvbmQpCglpZiBlcnIgIT0gbmlsIHsKCQl0LkZhdGFsKGVycikKCX0KCV8gPSBjb25uLlNldERlYWRsaW5lKHRpbWUuTm93KCkuQWRkKDUgKiB0aW1lLlNlY29uZCkpCgl0LkNsZWFudXAoZnVuYygpIHsgXyA9IGNvbm4uQ2xvc2UoKSB9KQoJcmV0dXJuIGNvbm4KfQoKZnVuYyBUZXN0U29ja3NDb25uZWN0RW5kVG9FbmQodCAqdGVzdGluZy5UKSB7Cglwcm94eSA6PSBzdGFydFRlc3RQcm94eSh0KQoJXywgcG9ydCA6PSBzdGFydFRlc3RFbmdpbmUodCwgcHJveHkpCgoJY29ubiA6PSBkaWFsU29ja3ModCwgcG9ydCkKCXNvY2tzR3JlZXRpbmcodCwgY29ubikKCXJlcCA6PSBzb2Nrc1JlcXVlc3QodCwgY29ubiwgMHgwMSwgbmV0LlBhcnNlSVAoIjkzLjE4NC4yMTYuMzQiKSwgODApCglpZiByZXAgIT0gMHgwMCB7CgkJdC5GYXRhbGYoIkNPTk5FQ1QgcmVwID0gJWQsIHdhbnQgMHgwMCIsIHJlcCkKCX0KCgltc2cgOj0gW11ieXRlKCJoZWxsby12cG4iKQoJaWYgXywgZXJyIDo9IGNvbm4uV3JpdGUobXNnKTsgZXJyICE9IG5pbCB7CgkJdC5GYXRhbChlcnIpCgl9Cglnb3QgOj0gbWFrZShbXWJ5dGUsIGxlbihtc2cpKQoJaWYgXywgZXJyIDo9IGlvLlJlYWRGdWxsKGNvbm4sIGdvdCk7IGVyciAhPSBuaWwgewoJCXQuRmF0YWwoZXJyKQoJfQoJaWYgc3RyaW5nKGdvdCkgIT0gc3RyaW5nKG1zZykgewoJCXQuRmF0YWxmKCJlY2hvIG1pc21hdGNoOiAlcSAhPSAlcSIsIGdvdCwgbXNnKQoJfQoKCXByb3h5Lm11LkxvY2soKQoJZGVmZXIgcHJveHkubXUuVW5sb2NrKCkKCWlmIGxlbihwcm94eS5hdXRob3JpdGllcykgIT0gMSB8fCBwcm94eS5hdXRob3JpdGllc1swXSAhPSAiOTMuMTg0LjIxNi4zNDo4MCIgewoJCXQuRmF0YWxmKCI6YXV0aG9yaXR5IHNlZW4gYnkgcHJveHkgPSAldiwgd2FudCBbOTMuMTg0LjIxNi4zNDo4MF0iLCBwcm94eS5hdXRob3JpdGllcykKCX0KCWlmIGxlbihwcm94eS5hdXRoSGVhZGVycykgIT0gMSB8fCBwcm94eS5hdXRoSGVhZGVyc1swXSAhPSAiQmVhcmVyIHRlc3QtdG9rZW4iIHsKCQl0LkZhdGFsZigiUHJveHktQXV0aG9yaXphdGlvbiA9ICV2IiwgcHJveHkuYXV0aEhlYWRlcnMpCgl9Cn0KCmZ1bmMgVGVzdFNvY2tzQ29ubmVjdFJlamVjdGVkUmVwb3J0c0ZhaWx1cmUodCAqdGVzdGluZy5UKSB7Cglwcm94eSA6PSBzdGFydFRlc3RQcm94eSh0KQoJcHJveHkucmVqZWN0SG9zdHNbIjEwLjAuMC4xOjQ0MyJdID0gdHJ1ZQoJXywgcG9ydCA6PSBzdGFydFRlc3RFbmdpbmUodCwgcHJveHkpCgoJY29ubiA6PSBkaWFsU29ja3ModCwgcG9ydCkKCXNvY2tzR3JlZXRpbmcodCwgY29ubikKCXJlcCA6PSBzb2Nrc1JlcXVlc3QodCwgY29ubiwgMHgwMSwgbmV0LlBhcnNlSVAoIjEwLjAuMC4xIiksIDQ0MykKCWlmIHJlcCA9PSAweDAwIHsKCQl0LkZhdGFsKCJyZWplY3RlZCBDT05ORUNUIG11c3Qgbm90IHJlcG9ydCBTT0NLUyBzdWNjZXNzIikKCX0KfQoKZnVuYyBUZXN0U29ja3NVbnN1cHBvcnRlZENvbW1hbmQodCAqdGVzdGluZy5UKSB7Cglwcm94eSA6PSBzdGFydFRlc3RQcm94eSh0KQoJXywgcG9ydCA6PSBzdGFydFRlc3RFbmdpbmUodCwgcHJveHkpCgoJY29ubiA6PSBkaWFsU29ja3ModCwgcG9ydCkKCXNvY2tzR3JlZXRpbmcodCwgY29ubikKCXJlcCA6PSBzb2Nrc1JlcXVlc3QodCwgY29ubiwgMHgwMywgbmV0LlBhcnNlSVAoIjAuMC4wLjAiKSwgMCkgLy8gVURQIEFTU09DSUFURQoJaWYgcmVwICE9IDB4MDcgewoJCXQuRmF0YWxmKCJVRFAgQVNTT0NJQVRFIHJlcCA9ICVkLCB3YW50IDB4MDcgKGNvbW1hbmQgbm90IHN1cHBvcnRlZCkiLCByZXApCgl9Cn0KCmZ1bmMgVGVzdEhldlVEUEluVENQRE5TQnJpZGdlKHQgKnRlc3RpbmcuVCkgewoJcHJveHkgOj0gc3RhcnRUZXN0UHJveHkodCkKCV8sIHBvcnQgOj0gc3RhcnRUZXN0RW5naW5lKHQsIHByb3h5KQoKCWNvbm4gOj0gZGlhbFNvY2tzKHQsIHBvcnQpCglzb2Nrc0dyZWV0aW5nKHQsIGNvbm4pCglyZXAgOj0gc29ja3NSZXF1ZXN0KHQsIGNvbm4sIDB4MDUsIG5ldC5QYXJzZUlQKCIwLjAuMC4wIiksIDApIC8vIEZXRF9VRFAKCWlmIHJlcCAhPSAweDAwIHsKCQl0LkZhdGFsZigiRldEX1VEUCByZXAgPSAlZCwgd2FudCAweDAwIiwgcmVwKQoJfQoKCXNlbmREYXRhZ3JhbSA6PSBmdW5jKGRzdElQIHN0cmluZywgZHN0UG9ydCB1aW50MTYsIHBheWxvYWQgW11ieXRlKSB7CgkJYWRkciA6PSBbXWJ5dGV7MHgwMX0KCQlhZGRyID0gYXBwZW5kKGFkZHIsIG5ldC5QYXJzZUlQKGRzdElQKS5UbzQoKS4uLikKCQl2YXIgcGIgWzJdYnl0ZQoJCWJpbmFyeS5CaWdFbmRpYW4uUHV0VWludDE2KHBiWzpdLCBkc3RQb3J0KQoJCWFkZHIgPSBhcHBlbmQoYWRkciwgcGJbOl0uLi4pCgkJZnJhbWUgOj0gbWFrZShbXWJ5dGUsIDMsIDMrbGVuKGFkZHIpK2xlbihwYXlsb2FkKSkKCQliaW5hcnkuQmlnRW5kaWFuLlB1dFVpbnQxNihmcmFtZVswOjJdLCB1aW50MTYobGVuKHBheWxvYWQpKSkKCQlmcmFtZVsyXSA9IGJ5dGUoMyArIGxlbihhZGRyKSkKCQlmcmFtZSA9IGFwcGVuZChmcmFtZSwgYWRkci4uLikKCQlmcmFtZSA9IGFwcGVuZChmcmFtZSwgcGF5bG9hZC4uLikKCQlpZiBfLCBlcnIgOj0gY29ubi5Xcml0ZShmcmFtZSk7IGVyciAhPSBuaWwgewoJCQl0LkZhdGFsKGVycikKCQl9Cgl9CgoJcXVlcnkgOj0gW11ieXRlezB4MTIsIDB4MzQsIDB4MDEsIDB4MDAsIDB4MDAsIDB4MDEsIDB4MDAsIDB4MDAsIDB4MDAsIDB4MDAsIDB4MDAsIDB4MDB9CglzZW5kRGF0YWdyYW0oIjguOC44LjgiLCA1MywgcXVlcnkpCgoJLy8gRXhwZWN0IG9uZSBmcmFtZWQgcmVzcG9uc2UgZWNob2luZyB0aGUgcXVlcnksIGFkZHJlc3NlZCBmcm9tIDguOC44Ljg6NTMuCgloZHIgOj0gbWFrZShbXWJ5dGUsIDMpCglpZiBfLCBlcnIgOj0gaW8uUmVhZEZ1bGwoY29ubiwgaGRyKTsgZXJyICE9IG5pbCB7CgkJdC5GYXRhbChlcnIpCgl9CglkYXRhTGVuIDo9IGludChiaW5hcnkuQmlnRW5kaWFuLlVpbnQxNihoZHJbMDoyXSkpCgloZHJMZW4gOj0gaW50KGhkclsyXSkKCXJlc3QgOj0gbWFrZShbXWJ5dGUsIGhkckxlbi0zK2RhdGFMZW4pCglpZiBfLCBlcnIgOj0gaW8uUmVhZEZ1bGwoY29ubiwgcmVzdCk7IGVyciAhPSBuaWwgewoJCXQuRmF0YWwoZXJyKQoJfQoJcmVzcEFkZHIsIHJlc3BQYXlsb2FkIDo9IHJlc3RbOmhkckxlbi0zXSwgcmVzdFtoZHJMZW4tMzpdCglob3N0LCBwLCBlcnIgOj0gcGFyc2VTb2Nrc0FkZHJCeXRlcyhyZXNwQWRkcikKCWlmIGVyciAhPSBuaWwgfHwgaG9zdCAhPSAiOC44LjguOCIgfHwgcCAhPSA1MyB7CgkJdC5GYXRhbGYoInJlc3BvbnNlIGFkZHIgPSAldjolZCBlcnI9JXYiLCBob3N0LCBwLCBlcnIpCgl9CglpZiBzdHJpbmcocmVzcFBheWxvYWQpICE9IHN0cmluZyhxdWVyeSkgewoJCXQuRmF0YWxmKCJETlMgcGF5bG9hZCBtaXNtYXRjaDogJXggIT0gJXgiLCByZXNwUGF5bG9hZCwgcXVlcnkpCgl9CgoJLy8gTm9uLUROUyBVRFAgKGUuZy4gUVVJQyB0byA0NDMpIG11c3QgYmUgZHJvcHBlZCwgbm90IGJyaWRnZWQuCglzZW5kRGF0YWdyYW0oIjE0Mi4yNTAuMC4xIiwgNDQzLCBbXWJ5dGV7MHhhYSwgMHhiYn0pCglfID0gY29ubi5TZXRSZWFkRGVhZGxpbmUodGltZS5Ob3coKS5BZGQoNDAwICogdGltZS5NaWxsaXNlY29uZCkpCglvbmUgOj0gbWFrZShbXWJ5dGUsIDEpCglpZiBfLCBlcnIgOj0gY29ubi5SZWFkKG9uZSk7IGVyciA9PSBuaWwgewoJCXQuRmF0YWwoIm5vbi1ETlMgVURQIGRhdGFncmFtIHVuZXhwZWN0ZWRseSBwcm9kdWNlZCBhIHJlc3BvbnNlIikKCX0KfQoKZnVuYyBUZXN0UGFyc2VTb2Nrc0FkZHJCeXRlcyh0ICp0ZXN0aW5nLlQpIHsKCWhvc3QsIHBvcnQsIGVyciA6PSBwYXJzZVNvY2tzQWRkckJ5dGVzKFtdYnl0ZXsweDAxLCAxLCAyLCAzLCA0LCAweDAwLCAweDM1fSkKCWlmIGVyciAhPSBuaWwgfHwgaG9zdCAhPSAiMS4yLjMuNCIgfHwgcG9ydCAhPSA1MyB7CgkJdC5GYXRhbGYoImlwdjQ6ICV2ICVkICV2IiwgaG9zdCwgcG9ydCwgZXJyKQoJfQoJZG9tIDo9IGFwcGVuZChbXWJ5dGV7MHgwMywgMHgwYn0sIFtdYnl0ZSgiZXhhbXBsZS5jb20iKS4uLikKCWRvbSA9IGFwcGVuZChkb20sIDB4MDEsIDB4YmIpCglob3N0LCBwb3J0LCBlcnIgPSBwYXJzZVNvY2tzQWRkckJ5dGVzKGRvbSkKCWlmIGVyciAhPSBuaWwgfHwgaG9zdCAhPSAiZXhhbXBsZS5jb20iIHx8IHBvcnQgIT0gNDQzIHsKCQl0LkZhdGFsZigiZG9tYWluOiAldiAlZCAldiIsIGhvc3QsIHBvcnQsIGVycikKCX0KCXY2IDo9IFtdYnl0ZXsweDA0fQoJdjYgPSBhcHBlbmQodjYsIG5ldC5QYXJzZUlQKCIyMDAxOmRiODo6MSIpLlRvMTYoKS4uLikKCXY2ID0gYXBwZW5kKHY2LCAweDAwLCAweDUwKQoJaG9zdCwgcG9ydCwgZXJyID0gcGFyc2VTb2Nrc0FkZHJCeXRlcyh2NikKCWlmIGVyciAhPSBuaWwgfHwgaG9zdCAhPSAiMjAwMTpkYjg6OjEiIHx8IHBvcnQgIT0gODAgewoJCXQuRmF0YWxmKCJpcHY2OiAldiAlZCAldiIsIGhvc3QsIHBvcnQsIGVycikKCX0KCWlmIF8sIF8sIGVyciA6PSBwYXJzZVNvY2tzQWRkckJ5dGVzKFtdYnl0ZXsweDA5LCAxfSk7IGVyciA9PSBuaWwgewoJCXQuRmF0YWwoInVua25vd24gYXR5cCBtdXN0IGVycm9yIikKCX0KCWlmIF8sIF8sIGVyciA6PSBwYXJzZVNvY2tzQWRkckJ5dGVzKFtdYnl0ZXsweDAxLCAxLCAyfSk7IGVyciA9PSBuaWwgewoJCXQuRmF0YWwoInRydW5jYXRlZCBpcHY0IG11c3QgZXJyb3IiKQoJfQp9Cg==
+package tunnel
+
+import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/binary"
+	"io"
+	"math/big"
+	"net"
+	"net/http"
+	"strconv"
+	"sync"
+	"testing"
+	"time"
+
+	"golang.org/x/net/http2"
+)
+
+// flushWriter flushes after every write so CONNECT echo streams behave
+// interactively instead of buffering until close.
+type flushWriter struct{ w http.ResponseWriter }
+
+func (fw flushWriter) Write(p []byte) (int, error) {
+	n, err := fw.w.Write(p)
+	if f, ok := fw.w.(http.Flusher); ok {
+		f.Flush()
+	}
+	return n, err
+}
+
+type testProxy struct {
+	addr        string
+	mu          sync.Mutex
+	authorities []string
+	authHeaders []string
+	rejectHosts map[string]bool
+	ln          net.Listener
+}
+
+func startTestProxy(t *testing.T) *testProxy {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "127.0.0.1"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+		DNSNames:     []string{"localhost"},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+
+	p := &testProxy{rejectHosts: map[string]bool{}}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			http.NotFound(w, r)
+			return
+		}
+		p.mu.Lock()
+		p.authorities = append(p.authorities, r.Host)
+		p.authHeaders = append(p.authHeaders, r.Header.Get("Proxy-Authorization"))
+		reject := p.rejectHosts[r.Host]
+		p.mu.Unlock()
+		if reject {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		if r.Host == "1.1.1.1:53" {
+			// DNS-over-TCP endpoint: echo the framed query back as the response.
+			var lenBuf [2]byte
+			if _, err := io.ReadFull(r.Body, lenBuf[:]); err != nil {
+				return
+			}
+			n := int(binary.BigEndian.Uint16(lenBuf[:]))
+			query := make([]byte, n)
+			if _, err := io.ReadFull(r.Body, query); err != nil {
+				return
+			}
+			fw := flushWriter{w}
+			_, _ = fw.Write(lenBuf[:])
+			_, _ = fw.Write(query)
+			return
+		}
+		// Generic target: byte echo.
+		_, _ = io.Copy(flushWriter{w}, r.Body)
+	})
+
+	tlsLn, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		NextProtos:   []string{"h2"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.ln = tlsLn
+	p.addr = tlsLn.Addr().String()
+
+	go func() {
+		srv := &http2.Server{}
+		for {
+			conn, err := tlsLn.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				// http2.Server.ServeConn requires the TLS handshake (and thus
+				// ALPN "h2" negotiation) to be complete before it runs.
+				if tc, ok := conn.(*tls.Conn); ok {
+					if err := tc.Handshake(); err != nil {
+						return
+					}
+				}
+				srv.ServeConn(conn, &http2.ServeConnOpts{Handler: handler})
+			}()
+		}
+	}()
+	t.Cleanup(func() { _ = tlsLn.Close() })
+	return p
+}
+
+func startTestEngine(t *testing.T, proxy *testProxy) (*Engine, int) {
+	t.Helper()
+	e := NewEngine()
+	e.tlsCfg = &tls.Config{
+		InsecureSkipVerify: true, // test-only self-signed proxy cert
+		NextProtos:         []string{"h2"},
+	}
+	port, err := e.Start("127.0.0.1:0", proxy.addr, "test-token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(e.Stop)
+	return e, port
+}
+
+func socksGreeting(t *testing.T, conn net.Conn) {
+	t.Helper()
+	if _, err := conn.Write([]byte{0x05, 0x01, 0x00}); err != nil {
+		t.Fatal(err)
+	}
+	resp := make([]byte, 2)
+	if _, err := io.ReadFull(conn, resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp[0] != 0x05 || resp[1] != 0x00 {
+		t.Fatalf("bad greeting reply %v", resp)
+	}
+}
+
+func socksRequest(t *testing.T, conn net.Conn, cmd byte, ip net.IP, port uint16) byte {
+	t.Helper()
+	req := []byte{0x05, cmd, 0x00, 0x01}
+	req = append(req, ip.To4()...)
+	var pb [2]byte
+	binary.BigEndian.PutUint16(pb[:], port)
+	req = append(req, pb[:]...)
+	if _, err := conn.Write(req); err != nil {
+		t.Fatal(err)
+	}
+	resp := make([]byte, 10)
+	if _, err := io.ReadFull(conn, resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp[0] != 0x05 {
+		t.Fatalf("bad reply version %d", resp[0])
+	}
+	return resp[1]
+}
+
+func dialSocks(t *testing.T, port int) net.Conn {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 3*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
+}
+
+func TestSocksConnectEndToEnd(t *testing.T) {
+	proxy := startTestProxy(t)
+	_, port := startTestEngine(t, proxy)
+
+	conn := dialSocks(t, port)
+	socksGreeting(t, conn)
+	rep := socksRequest(t, conn, 0x01, net.ParseIP("93.184.216.34"), 80)
+	if rep != 0x00 {
+		t.Fatalf("CONNECT rep = %d, want 0x00", rep)
+	}
+
+	msg := []byte("hello-vpn")
+	if _, err := conn.Write(msg); err != nil {
+		t.Fatal(err)
+	}
+	got := make([]byte, len(msg))
+	if _, err := io.ReadFull(conn, got); err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(msg) {
+		t.Fatalf("echo mismatch: %q != %q", got, msg)
+	}
+
+	proxy.mu.Lock()
+	defer proxy.mu.Unlock()
+	if len(proxy.authorities) != 1 || proxy.authorities[0] != "93.184.216.34:80" {
+		t.Fatalf(":authority seen by proxy = %v, want [93.184.216.34:80]", proxy.authorities)
+	}
+	if len(proxy.authHeaders) != 1 || proxy.authHeaders[0] != "Bearer test-token" {
+		t.Fatalf("Proxy-Authorization = %v", proxy.authHeaders)
+	}
+}
+
+func TestSocksConnectRejectedReportsFailure(t *testing.T) {
+	proxy := startTestProxy(t)
+	proxy.rejectHosts["10.0.0.1:443"] = true
+	_, port := startTestEngine(t, proxy)
+
+	conn := dialSocks(t, port)
+	socksGreeting(t, conn)
+	rep := socksRequest(t, conn, 0x01, net.ParseIP("10.0.0.1"), 443)
+	if rep == 0x00 {
+		t.Fatal("rejected CONNECT must not report SOCKS success")
+	}
+}
+
+func TestSocksUnsupportedCommand(t *testing.T) {
+	proxy := startTestProxy(t)
+	_, port := startTestEngine(t, proxy)
+
+	conn := dialSocks(t, port)
+	socksGreeting(t, conn)
+	rep := socksRequest(t, conn, 0x03, net.ParseIP("0.0.0.0"), 0) // UDP ASSOCIATE
+	if rep != 0x07 {
+		t.Fatalf("UDP ASSOCIATE rep = %d, want 0x07 (command not supported)", rep)
+	}
+}
+
+func TestHevUDPInTCPDNSBridge(t *testing.T) {
+	proxy := startTestProxy(t)
+	_, port := startTestEngine(t, proxy)
+
+	conn := dialSocks(t, port)
+	socksGreeting(t, conn)
+	rep := socksRequest(t, conn, 0x05, net.ParseIP("0.0.0.0"), 0) // FWD_UDP
+	if rep != 0x00 {
+		t.Fatalf("FWD_UDP rep = %d, want 0x00", rep)
+	}
+
+	sendDatagram := func(dstIP string, dstPort uint16, payload []byte) {
+		addr := []byte{0x01}
+		addr = append(addr, net.ParseIP(dstIP).To4()...)
+		var pb [2]byte
+		binary.BigEndian.PutUint16(pb[:], dstPort)
+		addr = append(addr, pb[:]...)
+		frame := make([]byte, 3, 3+len(addr)+len(payload))
+		binary.BigEndian.PutUint16(frame[0:2], uint16(len(payload)))
+		frame[2] = byte(3 + len(addr))
+		frame = append(frame, addr...)
+		frame = append(frame, payload...)
+		if _, err := conn.Write(frame); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	query := []byte{0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	sendDatagram("8.8.8.8", 53, query)
+
+	// Expect one framed response echoing the query, addressed from 8.8.8.8:53.
+	hdr := make([]byte, 3)
+	if _, err := io.ReadFull(conn, hdr); err != nil {
+		t.Fatal(err)
+	}
+	dataLen := int(binary.BigEndian.Uint16(hdr[0:2]))
+	hdrLen := int(hdr[2])
+	rest := make([]byte, hdrLen-3+dataLen)
+	if _, err := io.ReadFull(conn, rest); err != nil {
+		t.Fatal(err)
+	}
+	respAddr, respPayload := rest[:hdrLen-3], rest[hdrLen-3:]
+	host, p, err := parseSocksAddrBytes(respAddr)
+	if err != nil || host != "8.8.8.8" || p != 53 {
+		t.Fatalf("response addr = %v:%d err=%v", host, p, err)
+	}
+	if string(respPayload) != string(query) {
+		t.Fatalf("DNS payload mismatch: %x != %x", respPayload, query)
+	}
+
+	// Non-DNS UDP (e.g. QUIC to 443) must be dropped, not bridged.
+	sendDatagram("142.250.0.1", 443, []byte{0xaa, 0xbb})
+	_ = conn.SetReadDeadline(time.Now().Add(400 * time.Millisecond))
+	one := make([]byte, 1)
+	if _, err := conn.Read(one); err == nil {
+		t.Fatal("non-DNS UDP datagram unexpectedly produced a response")
+	}
+}
+
+func TestParseSocksAddrBytes(t *testing.T) {
+	host, port, err := parseSocksAddrBytes([]byte{0x01, 1, 2, 3, 4, 0x00, 0x35})
+	if err != nil || host != "1.2.3.4" || port != 53 {
+		t.Fatalf("ipv4: %v %d %v", host, port, err)
+	}
+	dom := append([]byte{0x03, 0x0b}, []byte("example.com")...)
+	dom = append(dom, 0x01, 0xbb)
+	host, port, err = parseSocksAddrBytes(dom)
+	if err != nil || host != "example.com" || port != 443 {
+		t.Fatalf("domain: %v %d %v", host, port, err)
+	}
+	v6 := []byte{0x04}
+	v6 = append(v6, net.ParseIP("2001:db8::1").To16()...)
+	v6 = append(v6, 0x00, 0x50)
+	host, port, err = parseSocksAddrBytes(v6)
+	if err != nil || host != "2001:db8::1" || port != 80 {
+		t.Fatalf("ipv6: %v %d %v", host, port, err)
+	}
+	if _, _, err := parseSocksAddrBytes([]byte{0x09, 1}); err == nil {
+		t.Fatal("unknown atyp must error")
+	}
+	if _, _, err := parseSocksAddrBytes([]byte{0x01, 1, 2}); err == nil {
+		t.Fatal("truncated ipv4 must error")
+	}
+}

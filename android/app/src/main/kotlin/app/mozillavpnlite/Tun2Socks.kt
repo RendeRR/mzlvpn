@@ -1,1 +1,116 @@
-cGFja2FnZSBhcHAubW96aWxsYXZwbmxpdGUKCmltcG9ydCBhbmRyb2lkLm9zLlBhcmNlbEZpbGVEZXNjcmlwdG9yCmltcG9ydCBhbmRyb2lkLnV0aWwuTG9nCgovKioKICogSk5JIGJyaWRnZSB0byBoZXYtc29ja3M1LXR1bm5lbC4KICoKICogVGhlIG5hdGl2ZSBsaWJyYXJ5IHJlZ2lzdGVycyBpdHMgbWV0aG9kcyBpbiBKTklfT25Mb2FkIHZpYSBSZWdpc3Rlck5hdGl2ZXMKICogd2l0aCBhbiBBTEwtT1ItTk9USElORyB0YWJsZSBvZiBmb3VyIG1ldGhvZHMuIElmIGFueSBLb3RsaW4gZGVjbGFyYXRpb24gZG9lcwogKiBub3QgbWF0Y2ggdGhlIG5hdGl2ZSBzaWduYXR1cmUgZXhhY3RseSAobmFtZSBBTkQgcmV0dXJuIHR5cGUpLCByZWdpc3RyYXRpb24KICogZmFpbHMsIEpOSV9PbkxvYWQgcmV0dXJucyBKTklfRVJSIGFuZCBTeXN0ZW0ubG9hZExpYnJhcnkgdGhyb3dzIOKAlCBzbyBhbGwKICogZm91ciBtZXRob2RzIG11c3QgYmUgZGVjbGFyZWQgaGVyZSB3aXRoIHRoZSBleGFjdCBzaWduYXR1cmVzIGZyb20gaGV2LWpuaS5jOgogKgogKiAgIFRQcm94eVN0YXJ0U2VydmljZSAoTGphdmEvbGFuZy9TdHJpbmc7SSlaICAgLT4gQm9vbGVhbgogKiAgIFRQcm94eVN0b3BTZXJ2aWNlICAoKVogICAgICAgICAgICAgICAgICAgICAtPiBCb29sZWFuCiAqICAgVFByb3h5SXNSdW5uaW5nICAgICgpWiAgICAgICAgICAgICAgICAgICAgIC0+IEJvb2xlYW4KICogICBUUHJveHlHZXRTdGF0cyAgICAgKClbSiAgICAgICAgICAgICAgICAgICAgLT4gTG9uZ0FycmF5CiAqCiAqIEZhaWx1cmVzIG11c3QgTkVWRVIgYmUgc3dhbGxvd2VkIHNpbGVudGx5OiBhIFZQTiB0aGF0IHJvdXRlcyBhbGwgdHJhZmZpYwogKiBpbnRvIGEgVFVOIGZkIG5vYm9keSByZWFkcyBpcyBhIHRvdGFsIGJsYWNraG9sZS4KICovCm9iamVjdCBUdW4yU29ja3MgewogICAgcHJpdmF0ZSBjb25zdCB2YWwgVEFHID0gIlR1bjJTb2NrcyIKCiAgICBAVm9sYXRpbGUKICAgIHByaXZhdGUgdmFyIGxpYnJhcnlMb2FkZWQgPSBmYWxzZQoKICAgIHByaXZhdGUgdmFyIGFjdGl2ZVR1bkZkOiBQYXJjZWxGaWxlRGVzY3JpcHRvcj8gPSBudWxsCgogICAgaW5pdCB7CiAgICAgICAgbGlicmFyeUxvYWRlZCA9IHRyeSB7CiAgICAgICAgICAgIFN5c3RlbS5sb2FkTGlicmFyeSgiaGV2LXNvY2tzNS10dW5uZWwiKQogICAgICAgICAgICB0cnVlCiAgICAgICAgfSBjYXRjaCAodDogVGhyb3dhYmxlKSB7CiAgICAgICAgICAgIExvZy5lKFRBRywgImZhaWxlZCB0byBsb2FkIGhldi1zb2NrczUtdHVubmVsIiwgdCkKICAgICAgICAgICAgZmFsc2UKICAgICAgICB9CiAgICB9CgogICAgcHJpdmF0ZSBleHRlcm5hbCBmdW4gVFByb3h5U3RhcnRTZXJ2aWNlKGNvbmZpZ1BhdGg6IFN0cmluZywgZmQ6IEludCk6IEJvb2xlYW4KICAgIHByaXZhdGUgZXh0ZXJuYWwgZnVuIFRQcm94eVN0b3BTZXJ2aWNlKCk6IEJvb2xlYW4KICAgIHByaXZhdGUgZXh0ZXJuYWwgZnVuIFRQcm94eUlzUnVubmluZygpOiBCb29sZWFuCiAgICBwcml2YXRlIGV4dGVybmFsIGZ1biBUUHJveHlHZXRTdGF0cygpOiBMb25nQXJyYXkKCiAgICAvKioKICAgICAqIFN0YXJ0cyB0aGUgdHVuMnNvY2tzIGZvcndhcmRlci4gUmV0dXJucyB0cnVlIG9ubHkgd2hlbiB0aGUgbmF0aXZlIHNpZGUKICAgICAqIGNvbmZpcm1lZCB0aGUgc3RhcnQuIE9uIGFueSBmYWlsdXJlIHRoZSBwYXNzZWQgW3R1bkZkXSBpcyBjbG9zZWQgc28gdGhlCiAgICAgKiBjYWxsZXIgbXVzdCB0ZWFyIHRoZSBWUE4gZG93biBpbnN0ZWFkIG9mIGJsYWNraG9saW5nIHRoZSBkZXZpY2UuCiAgICAgKi8KICAgIEBTeW5jaHJvbml6ZWQKICAgIGZ1biBzdGFydChjb25maWdQYXRoOiBTdHJpbmcsIHR1bkZkOiBQYXJjZWxGaWxlRGVzY3JpcHRvcik6IEJvb2xlYW4gewogICAgICAgIHN0b3AoKQogICAgICAgIGlmICghbGlicmFyeUxvYWRlZCkgewogICAgICAgICAgICBMb2cuZShUQUcsICJoZXYtc29ja3M1LXR1bm5lbCBsaWJyYXJ5IGlzIG5vdCBsb2FkZWQsIGNhbm5vdCBzdGFydCIpCiAgICAgICAgICAgIGNsb3NlUXVpZXRseSh0dW5GZCkKICAgICAgICAgICAgcmV0dXJuIGZhbHNlCiAgICAgICAgfQogICAgICAgIGFjdGl2ZVR1bkZkID0gdHVuRmQKICAgICAgICB2YWwgc3RhcnRlZCA9IHRyeSB7CiAgICAgICAgICAgIFRQcm94eVN0YXJ0U2VydmljZShjb25maWdQYXRoLCB0dW5GZC5mZCkKICAgICAgICB9IGNhdGNoICh0OiBUaHJvd2FibGUpIHsKICAgICAgICAgICAgTG9nLmUoVEFHLCAiVFByb3h5U3RhcnRTZXJ2aWNlIHRocmV3IiwgdCkKICAgICAgICAgICAgZmFsc2UKICAgICAgICB9CiAgICAgICAgaWYgKCFzdGFydGVkKSB7CiAgICAgICAgICAgIExvZy5lKFRBRywgIlRQcm94eVN0YXJ0U2VydmljZSByZXR1cm5lZCBmYWxzZSIpCiAgICAgICAgICAgIGFjdGl2ZVR1bkZkID0gbnVsbAogICAgICAgICAgICBjbG9zZVF1aWV0bHkodHVuRmQpCiAgICAgICAgICAgIHJldHVybiBmYWxzZQogICAgICAgIH0KICAgICAgICByZXR1cm4gdHJ1ZQogICAgfQoKICAgIEBTeW5jaHJvbml6ZWQKICAgIGZ1biBzdG9wKCkgewogICAgICAgIHZhbCBmZCA9IGFjdGl2ZVR1bkZkID86IHJldHVybgogICAgICAgIGFjdGl2ZVR1bkZkID0gbnVsbAogICAgICAgIGlmIChsaWJyYXJ5TG9hZGVkKSB7CiAgICAgICAgICAgIHRyeSB7CiAgICAgICAgICAgICAgICBUUHJveHlTdG9wU2VydmljZSgpCiAgICAgICAgICAgIH0gY2F0Y2ggKHQ6IFRocm93YWJsZSkgewogICAgICAgICAgICAgICAgTG9nLmUoVEFHLCAiVFByb3h5U3RvcFNlcnZpY2UgdGhyZXciLCB0KQogICAgICAgICAgICB9CiAgICAgICAgfQogICAgICAgIGNsb3NlUXVpZXRseShmZCkKICAgIH0KCiAgICBmdW4gaXNSdW5uaW5nKCk6IEJvb2xlYW4gewogICAgICAgIGlmICghbGlicmFyeUxvYWRlZCkgcmV0dXJuIGZhbHNlCiAgICAgICAgcmV0dXJuIHRyeSB7CiAgICAgICAgICAgIFRQcm94eUlzUnVubmluZygpCiAgICAgICAgfSBjYXRjaCAodDogVGhyb3dhYmxlKSB7CiAgICAgICAgICAgIExvZy5lKFRBRywgIlRQcm94eUlzUnVubmluZyB0aHJldyIsIHQpCiAgICAgICAgICAgIGZhbHNlCiAgICAgICAgfQogICAgfQoKICAgIC8qKiBSZXR1cm5zIFt0eFBhY2tldHMsIHR4Qnl0ZXMsIHJ4UGFja2V0cywgcnhCeXRlc10gb3IgbnVsbCB3aGVuIHVuYXZhaWxhYmxlLiAqLwogICAgZnVuIHN0YXRzKCk6IExvbmdBcnJheT8gewogICAgICAgIGlmICghbGlicmFyeUxvYWRlZCkgcmV0dXJuIG51bGwKICAgICAgICByZXR1cm4gdHJ5IHsKICAgICAgICAgICAgVFByb3h5R2V0U3RhdHMoKQogICAgICAgIH0gY2F0Y2ggKHQ6IFRocm93YWJsZSkgewogICAgICAgICAgICBMb2cuZShUQUcsICJUUHJveHlHZXRTdGF0cyB0aHJldyIsIHQpCiAgICAgICAgICAgIG51bGwKICAgICAgICB9CiAgICB9CgogICAgcHJpdmF0ZSBmdW4gY2xvc2VRdWlldGx5KGZkOiBQYXJjZWxGaWxlRGVzY3JpcHRvcikgewogICAgICAgIHRyeSB7CiAgICAgICAgICAgIGZkLmNsb3NlKCkKICAgICAgICB9IGNhdGNoIChfOiBUaHJvd2FibGUpIHsKICAgICAgICB9CiAgICB9Cn0K
+package app.mozillavpnlite
+
+import android.os.ParcelFileDescriptor
+import android.util.Log
+
+/**
+ * JNI bridge to hev-socks5-tunnel.
+ *
+ * The native library registers its methods in JNI_OnLoad via RegisterNatives
+ * with an ALL-OR-NOTHING table of four methods. If any Kotlin declaration does
+ * not match the native signature exactly (name AND return type), registration
+ * fails, JNI_OnLoad returns JNI_ERR and System.loadLibrary throws — so all
+ * four methods must be declared here with the exact signatures from hev-jni.c:
+ *
+ *   TProxyStartService (Ljava/lang/String;I)Z   -> Boolean
+ *   TProxyStopService  ()Z                     -> Boolean
+ *   TProxyIsRunning    ()Z                     -> Boolean
+ *   TProxyGetStats     ()[J                    -> LongArray
+ *
+ * Failures must NEVER be swallowed silently: a VPN that routes all traffic
+ * into a TUN fd nobody reads is a total blackhole.
+ */
+object Tun2Socks {
+    private const val TAG = "Tun2Socks"
+
+    @Volatile
+    private var libraryLoaded = false
+
+    private var activeTunFd: ParcelFileDescriptor? = null
+
+    init {
+        libraryLoaded = try {
+            System.loadLibrary("hev-socks5-tunnel")
+            true
+        } catch (t: Throwable) {
+            Log.e(TAG, "failed to load hev-socks5-tunnel", t)
+            false
+        }
+    }
+
+    private external fun TProxyStartService(configPath: String, fd: Int): Boolean
+    private external fun TProxyStopService(): Boolean
+    private external fun TProxyIsRunning(): Boolean
+    private external fun TProxyGetStats(): LongArray
+
+    /**
+     * Starts the tun2socks forwarder. Returns true only when the native side
+     * confirmed the start. On any failure the passed [tunFd] is closed so the
+     * caller must tear the VPN down instead of blackholing the device.
+     */
+    @Synchronized
+    fun start(configPath: String, tunFd: ParcelFileDescriptor): Boolean {
+        stop()
+        if (!libraryLoaded) {
+            Log.e(TAG, "hev-socks5-tunnel library is not loaded, cannot start")
+            closeQuietly(tunFd)
+            return false
+        }
+        activeTunFd = tunFd
+        val started = try {
+            TProxyStartService(configPath, tunFd.fd)
+        } catch (t: Throwable) {
+            Log.e(TAG, "TProxyStartService threw", t)
+            false
+        }
+        if (!started) {
+            Log.e(TAG, "TProxyStartService returned false")
+            activeTunFd = null
+            closeQuietly(tunFd)
+            return false
+        }
+        return true
+    }
+
+    @Synchronized
+    fun stop() {
+        val fd = activeTunFd ?: return
+        activeTunFd = null
+        if (libraryLoaded) {
+            try {
+                TProxyStopService()
+            } catch (t: Throwable) {
+                Log.e(TAG, "TProxyStopService threw", t)
+            }
+        }
+        closeQuietly(fd)
+    }
+
+    fun isRunning(): Boolean {
+        if (!libraryLoaded) return false
+        return try {
+            TProxyIsRunning()
+        } catch (t: Throwable) {
+            Log.e(TAG, "TProxyIsRunning threw", t)
+            false
+        }
+    }
+
+    /** Returns [txPackets, txBytes, rxPackets, rxBytes] or null when unavailable. */
+    fun stats(): LongArray? {
+        if (!libraryLoaded) return null
+        return try {
+            TProxyGetStats()
+        } catch (t: Throwable) {
+            Log.e(TAG, "TProxyGetStats threw", t)
+            null
+        }
+    }
+
+    private fun closeQuietly(fd: ParcelFileDescriptor) {
+        try {
+            fd.close()
+        } catch (_: Throwable) {
+        }
+    }
+}

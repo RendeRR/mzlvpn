@@ -1,1 +1,550 @@
-Ly8gUGFja2FnZSBtb2JpbGUgaXMgdGhlIGdvbW9iaWxlIGJpbmQgZW50cnkgcG9pbnQgZm9yIEFuZHJvaWQgKGxpYnMvY29yZS5hYXIpLgovLyBDb250YWlucyBPTkxZIE1vemlsbGEgYWNjb3VudCBtYW5hZ2VtZW50ICh3aXRoIDJGQS9lbWFpbCBjb2RlICYgV2ViQ2hhbm5lbCBzdXBwb3J0KSwKLy8gYXV0b21hdGljIDUgR0IgcXVvdGEgcm90YXRpb24sIFJlbW90ZSBTZXR0aW5ncyBzZXJ2ZXIgc2VsZWN0aW9uIHdpdGggcmVhbCAxLVJUVAovLyBsYXRlbmN5IG1lYXN1cmVtZW50LCBhbmQgdGhlIGxvY2FsIFNPQ0tTNSAtPiBIMiBDT05ORUNUIHR1bm5lbC4KcGFja2FnZSBtb2JpbGUKCmltcG9ydCAoCgkiY29udGV4dCIKCSJlbmNvZGluZy9qc29uIgoJImVycm9ycyIKCSJuZXQvaHR0cCIKCSJzdHJpbmdzIgoJInN5bmMiCgkidGltZSIKCgkibW96aWxsYXZwbmxpdGUvY29yZS9hY2NvdW50cyIKCSJtb3ppbGxhdnBubGl0ZS9jb3JlL2Z4YSIKCSJtb3ppbGxhdnBubGl0ZS9jb3JlL3NlcnZlcmxpc3QiCgkibW96aWxsYXZwbmxpdGUvY29yZS90dW5uZWwiCikKCnZhciAoCgltdSAgICAgICAgICAgc3luYy5NdXRleAoJcG9vbCAgICAgICAgICphY2NvdW50cy5Qb29sCgllbmdpbmUgICAgICAgPSB0dW5uZWwuTmV3RW5naW5lKCkKCWxvY2F0aW9ucyAgICA9IHNlcnZlcmxpc3QuRGVmYXVsdExvY2F0aW9ucygpCglzZWxlY3RlZENvZGUgPSAiREUiCgkvLyBEZWZhdWx0IGlzIEhUVFAvMiBDT05ORUNUOiBIVFRQLzMgTUFTUVVFIChRVUlDL1VEUCkgaXMgaGVhdmlseQoJLy8gdGhyb3R0bGVkL2Jsb2NrZWQgYnkgUnVzc2lhbiBJU1BzIGFuZCBkb2VzIG5vdCB3b3JrIGluIHByYWN0aWNlLgoJLy8gVGhlIHR1bm5lbCBlbmdpbmUgYWx3YXlzIHNwZWFrcyBIVFRQLzIgQ09OTkVDVDsgdGhlIHByb3RvY29sIHZhbHVlCgkvLyBpcyBjdXJyZW50bHkgYSBVSSBsYWJlbCBrZXB0IGZvciBhIGZ1dHVyZSByZWFsIE1BU1FVRSB0cmFuc3BvcnQuCglzZWxlY3RlZFByb3RvY29sID0gIkhUVFAvMiBDT05ORUNUIChUTFMgMS4zKSIKCWNvbm5lY3RlZCAgICAgICAgPSBmYWxzZQoKCS8vIFBlbmRpbmcgMi1zdGVwIGxvZ2luIHN0YXRlIHdoZW4gRnhBIHJlcXVlc3RzIGFuIGVtYWlsL1RPVFAgdmVyaWZpY2F0aW9uIGNvZGUKCXBlbmRpbmdFbWFpbCAgICAgIHN0cmluZwoJcGVuZGluZ1Nlc3Npb25IZXggc3RyaW5nCglwZW5kaW5nVmVyaWZ5TW9kZSBzdHJpbmcgLy8gImVtYWlsLTJmYSIgb3IgInRvdHAtMmZhIgopCgp0eXBlIEFjdGlvblJlc3VsdCBzdHJ1Y3QgewoJU3RhdGUgICBzdHJpbmcgYGpzb246InN0YXRlImAgICAvLyAib2siLCAidmVyaWZ5X2VtYWlsIiwgInZlcmlmeV90b3RwIiwgInVuYmxvY2tfY29kZSIsICJuZWVkX2Jyb3dzZXIiLCAiZXJyb3IiCglNZXNzYWdlIHN0cmluZyBganNvbjoibWVzc2FnZSJgIC8vIEh1bWFuLXJlYWRhYmxlIFJ1c3NpYW4gc3RhdHVzIG9yIGVycm9yCglFbWFpbCAgIHN0cmluZyBganNvbjoiZW1haWwsb21pdGVtcHR5ImAKfQoKZnVuYyBqc29uUmVzdWx0KHN0YXRlLCBtZXNzYWdlLCBlbWFpbCBzdHJpbmcpIHN0cmluZyB7CgliLCBfIDo9IGpzb24uTWFyc2hhbChBY3Rpb25SZXN1bHR7U3RhdGU6IHN0YXRlLCBNZXNzYWdlOiBtZXNzYWdlLCBFbWFpbDogZW1haWx9KQoJcmV0dXJuIHN0cmluZyhiKQp9CgovLyBTdGFydCBpbml0aWFsaXplcyB0aGUgYWNjb3VudCBwb29sIGFuZCBzZXJ2ZXIgbGlzdCBpbiBkYXRhRGlyLgpmdW5jIFN0YXJ0KGRhdGFEaXIgc3RyaW5nLCBhdXRvQ29ubmVjdCBib29sKSBlcnJvciB7CgltdS5Mb2NrKCkKCWlmIHBvb2wgIT0gbmlsIHsKCQltdS5VbmxvY2soKQoJCWlmIGF1dG9Db25uZWN0IHsKCQkJcmV0dXJuIENvbm5lY3QoKQoJCX0KCQlyZXR1cm4gbmlsCgl9CglwLCBlcnIgOj0gYWNjb3VudHMuTG9hZE9yQ3JlYXRlUG9vbChkYXRhRGlyKQoJaWYgZXJyICE9IG5pbCB7CgkJbXUuVW5sb2NrKCkKCQlyZXR1cm4gZXJyCgl9Cglwb29sID0gcAoJbXUuVW5sb2NrKCkKCgllbmdpbmUuT25UcmFmZmljQnl0ZXMgPSBmdW5jKGRlbHRhIGludDY0KSB7CgkJaWYgcC5SZWNvcmRUcmFmZmljKGRlbHRhKSB7CgkJCWdvIHJvdGF0ZUFjdGl2ZUFjY291bnQocCkKCQl9Cgl9CgllbmdpbmUuT25RdW90YUhlYWRlcnMgPSBmdW5jKGggaHR0cC5IZWFkZXIpIHsKCQlwLlVwZGF0ZVF1b3RhRnJvbUhlYWRlcnMoaCkKCX0KCWVuZ2luZS5PblF1b3RhRXhoYXVzdCA9IGZ1bmMoKSB7CgkJcm90YXRlQWN0aXZlQWNjb3VudChwKQoJfQoKCS8vIEF1dG9tYXRpY2FsbHkgZmV0Y2ggYWxsIDMyIGNvdW50cmllcyBhbmQgbWVhc3VyZSByZWFsIDEtUlRUIHBpbmdzIGZyb20gdGhlIGRldmljZQoJZ28gZnVuYygpIHsKCQkvLyAxLiBNZWFzdXJlIHJlYWwgcGluZ3MgZm9yIGluaXRpYWwgbGlzdCBpbW1lZGlhdGVseSAofjEuNXMpCgkJXyA9IFBpbmdBbGxMb2NhdGlvbnMoKQoKCQkvLyAyLiBGZXRjaCBmdWxsIFJlbW90ZSBTZXR0aW5ncyBzZXJ2ZXIgbGlzdCBhbmQgbWVhc3VyZSByZWFsIHBpbmdzIGZvciBhbGwgMzIgbG9jYXRpb25zCgkJY3R4LCBjYW5jZWwgOj0gY29udGV4dC5XaXRoVGltZW91dChjb250ZXh0LkJhY2tncm91bmQoKSwgMTUqdGltZS5TZWNvbmQpCgkJbGlzdCwgZmV0Y2hFcnIgOj0gc2VydmVybGlzdC5GZXRjaChjdHgpCgkJY2FuY2VsKCkKCQlpZiBmZXRjaEVyciA9PSBuaWwgJiYgbGVuKGxpc3QpID4gMCB7CgkJCXBpbmdDdHgsIHBpbmdDYW5jZWwgOj0gY29udGV4dC5XaXRoVGltZW91dChjb250ZXh0LkJhY2tncm91bmQoKSwgMjAqdGltZS5TZWNvbmQpCgkJCW1lYXN1cmVkIDo9IHNlcnZlcmxpc3QuTWVhc3VyZUxhdGVuY2llcyhwaW5nQ3R4LCBsaXN0LCBmdW5jKGMgY29udGV4dC5Db250ZXh0LCBlbmRwb2ludCBzdHJpbmcpICh0aW1lLkR1cmF0aW9uLCBlcnJvcikgewoJCQkJcmV0dXJuIHR1bm5lbC5Qcm9iZVRMU0hhbmRzaGFrZShjLCBlbmRwb2ludCkKCQkJfSkKCQkJcGluZ0NhbmNlbCgpCgkJCW11LkxvY2soKQoJCQlsb2NhdGlvbnMgPSBtZWFzdXJlZAoJCQltdS5VbmxvY2soKQoJCX0KCX0oKQoKCS8vIFJlZnJlc2ggYWN0aXZlIGFjY291bnQgcXVvdGEgaW4gYmFja2dyb3VuZCBvbiBzdGFydHVwCglnbyBmdW5jKCkgewoJCWlmIGFjdGl2ZSA6PSBwLkFjdGl2ZUFjY291bnQoKTsgYWN0aXZlICE9IG5pbCB7CgkJCWN0eCwgY2FuY2VsIDo9IGNvbnRleHQuV2l0aFRpbWVvdXQoY29udGV4dC5CYWNrZ3JvdW5kKCksIDEyKnRpbWUuU2Vjb25kKQoJCQlkZWZlciBjYW5jZWwoKQoJCQlfLCBfID0gcC5FbnN1cmVGcmVzaFBhc3MoY3R4LCBhY3RpdmUpCgkJfQoJfSgpCgoJaWYgYXV0b0Nvbm5lY3QgewoJCXJldHVybiBDb25uZWN0KCkKCX0KCXJldHVybiBuaWwKfQoKZnVuYyByb3RhdGVBY3RpdmVBY2NvdW50KHAgKmFjY291bnRzLlBvb2wpIHsKCWFjdGl2ZSA6PSBwLkFjdGl2ZUFjY291bnQoKQoJaWYgYWN0aXZlID09IG5pbCB7CgkJcmV0dXJuCgl9CgljdHgsIGNhbmNlbCA6PSBjb250ZXh0LldpdGhUaW1lb3V0KGNvbnRleHQuQmFja2dyb3VuZCgpLCAxMip0aW1lLlNlY29uZCkKCWRlZmVyIGNhbmNlbCgpCglpZiBwYXNzLCBlcnIgOj0gcC5Sb3RhdGVUb05leHRSZWFkeShjdHgsIGFjdGl2ZS5JRCk7IGVyciA9PSBuaWwgJiYgcGFzcyAhPSBuaWwgewoJCWVuZ2luZS5VcGRhdGVUb2tlbihwYXNzLlJhd1Rva2VuKQoJfQp9CgovLyBSdW5uaW5nIHJlcG9ydHMgd2hldGhlciB0aGUgY29yZSBoYXMgYmVlbiBpbml0aWFsaXplZC4KZnVuYyBSdW5uaW5nKCkgYm9vbCB7CgltdS5Mb2NrKCkKCWRlZmVyIG11LlVubG9jaygpCglyZXR1cm4gcG9vbCAhPSBuaWwKfQoKLy8gQ29ubmVjdCBvYnRhaW5zIGEgZnJlc2ggR3VhcmRpYW4gUHJveHlQYXNzIGZyb20gdGhlIGFjdGl2ZSBNb3ppbGxhIGFjY291bnQKLy8gKHJvdGF0aW5nIGF1dG9tYXRpY2FsbHkgaWYgaXRzIDUgR0IgcXVvdGEgaXMgZXhoYXVzdGVkKSBhbmQgc3RhcnRzIHRoZSBsb2NhbCB0dW5uZWwuCmZ1bmMgQ29ubmVjdCgpIGVycm9yIHsKCW11LkxvY2soKQoJcCA6PSBwb29sCglsb2MgOj0gY3VycmVudExvY2F0aW9uTG9ja2VkKCkKCW11LlVubG9jaygpCgoJaWYgcCA9PSBuaWwgewoJCXJldHVybiBlcnJvcnMuTmV3KCLRj9C00YDQviDQvdC1INC40L3QuNGG0LjQsNC70LjQt9C40YDQvtCy0LDQvdC+IikKCX0KCWFjdGl2ZSA6PSBwLkFjdGl2ZUFjY291bnQoKQoJaWYgYWN0aXZlID09IG5pbCB7CgkJcmV0dXJuIGVycm9ycy5OZXcoItC00L7QsdCw0LLRjNGC0LUg0YXQvtGC0Y8g0LHRiyDQvtC00LjQvSDQsNC60LrQsNGD0L3RgiBNb3ppbGxhINCy0L4g0LLQutC70LDQtNC60LUg0JDQutC60LDRg9C90YLRiyIpCgl9CgoJLy8gU3RhcnQgbG9jYWwgU09DS1M1IGxpc3RlbmVyIGltbWVkaWF0ZWx5IHVzaW5nIHdhcm0gdG9rZW4gaWYgYXZhaWxhYmxlCgl2YXIgaW5pdGlhbFRva2VuIHN0cmluZwoJaWYgYWN0aXZlLkxhc3RQYXNzICE9IG5pbCAmJiBhY3RpdmUuTGFzdFBhc3MuUmF3VG9rZW4gIT0gIiIgewoJCWluaXRpYWxUb2tlbiA9IGFjdGl2ZS5MYXN0UGFzcy5SYXdUb2tlbgoJfQoKCWlmIGluaXRpYWxUb2tlbiAhPSAiIiAmJiBhY3RpdmUuSGFzV2FybVBhc3MoKSB7CgkJaWYgXywgZXJyIDo9IGVuZ2luZS5TdGFydCgiMTI3LjAuMC4xOjAiLCBsb2MuRW5kcG9pbnQoKSwgaW5pdGlhbFRva2VuKTsgZXJyICE9IG5pbCB7CgkJCXJldHVybiBlcnIKCQl9CgkJbXUuTG9jaygpCgkJY29ubmVjdGVkID0gdHJ1ZQoJCW11LlVubG9jaygpCgoJCS8vIFJlZnJlc2ggcXVvdGEgaW4gdGhlIGJhY2tncm91bmQgd2l0aG91dCBkZWxheWluZyB0dW5uZWwgc3RhcnR1cAoJCWdvIGZ1bmMoKSB7CgkJCWN0eCwgY2FuY2VsIDo9IGNvbnRleHQuV2l0aFRpbWVvdXQoY29udGV4dC5CYWNrZ3JvdW5kKCksIDEyKnRpbWUuU2Vjb25kKQoJCQlkZWZlciBjYW5jZWwoKQoJCQlpZiBwYXNzLCBlcnIgOj0gcC5FbnN1cmVGcmVzaFBhc3MoY3R4LCBhY3RpdmUpOyBlcnIgPT0gbmlsICYmIHBhc3MgIT0gbmlsIHsKCQkJCWVuZ2luZS5VcGRhdGVUb2tlbihwYXNzLlJhd1Rva2VuKQoJCQl9CgkJfSgpCgkJcmV0dXJuIG5pbAoJfQoKCWN0eCwgY2FuY2VsIDo9IGNvbnRleHQuV2l0aFRpbWVvdXQoY29udGV4dC5CYWNrZ3JvdW5kKCksIDE1KnRpbWUuU2Vjb25kKQoJZGVmZXIgY2FuY2VsKCkKCglwYXNzLCBlcnIgOj0gcC5FbnN1cmVGcmVzaFBhc3MoY3R4LCBhY3RpdmUpCglpZiBlcnIgIT0gbmlsIHsKCQlyZXR1cm4gZXJyCgl9CgoJXywgZXJyID0gZW5naW5lLlN0YXJ0KCIxMjcuMC4wLjE6MCIsIGxvYy5FbmRwb2ludCgpLCBwYXNzLlJhd1Rva2VuKQoJaWYgZXJyICE9IG5pbCB7CgkJcmV0dXJuIGVycgoJfQoKCW11LkxvY2soKQoJY29ubmVjdGVkID0gdHJ1ZQoJbXUuVW5sb2NrKCkKCXJldHVybiBuaWwKfQoKLy8gUmVjb25uZWN0IGltbWVkaWF0ZWx5IHJlc2V0cyB0aGUgSFRUUC8yIHNlc3Npb24gd2hlbiBBbmRyb2lkIHN3aXRjaGVzIG5ldHdvcmtzCi8vIChlLmcuIFdpLUZpIDwtPiBMVEUvNUcpIHdpdGhvdXQgd2FpdGluZyBmb3Igb2xkIFRDUCB0aW1lb3V0cy4KZnVuYyBSZWNvbm5lY3QoKSB7CgllbmdpbmUuUmVzZXRTZXNzaW9uKCkKCW11LkxvY2soKQoJcCA6PSBwb29sCglpc0Nvbm4gOj0gY29ubmVjdGVkCgltdS5VbmxvY2soKQoJaWYgIWlzQ29ubiB8fCBwID09IG5pbCB7CgkJcmV0dXJuCgl9CglnbyBmdW5jKCkgewoJCWlmIGFjdGl2ZSA6PSBwLkFjdGl2ZUFjY291bnQoKTsgYWN0aXZlICE9IG5pbCAmJiAhYWN0aXZlLkhhc1dhcm1QYXNzKCkgewoJCQljdHgsIGNhbmNlbCA6PSBjb250ZXh0LldpdGhUaW1lb3V0KGNvbnRleHQuQmFja2dyb3VuZCgpLCAxMCp0aW1lLlNlY29uZCkKCQkJZGVmZXIgY2FuY2VsKCkKCQkJaWYgcGFzcywgZXJyIDo9IHAuRW5zdXJlRnJlc2hQYXNzKGN0eCwgYWN0aXZlKTsgZXJyID09IG5pbCAmJiBwYXNzICE9IG5pbCB7CgkJCQllbmdpbmUuVXBkYXRlVG9rZW4ocGFzcy5SYXdUb2tlbikKCQkJfQoJCX0KCX0oKQp9CgovLyBEaXNjb25uZWN0IHN0b3BzIHRoZSBsb2NhbCBTT0NLUzUgdHVubmVsLgpmdW5jIERpc2Nvbm5lY3QoKSB7CgllbmdpbmUuU3RvcCgpCgltdS5Mb2NrKCkKCWNvbm5lY3RlZCA9IGZhbHNlCgltdS5VbmxvY2soKQp9CgovLyBTd2l0Y2hBY2NvdW50IGltbWVkaWF0ZWx5IHN3aXRjaGVzIHRoZSBhY3RpdmUgTW96aWxsYSBhY2NvdW50IGFuZCBob3Qtc3dhcHMKLy8gaXRzIFByb3h5UGFzcyBKV1QgaW4gdGhlIHJ1bm5pbmcgdHVubmVsICgwIG1zIGlmIHByZS13YXJtZWQpLgpmdW5jIFN3aXRjaEFjY291bnQoYWNjb3VudElEIHN0cmluZykgZXJyb3IgewoJbXUuTG9jaygpCglwIDo9IHBvb2wKCW11LlVubG9jaygpCglpZiBwID09IG5pbCB7CgkJcmV0dXJuIGVycm9ycy5OZXcoItGP0LTRgNC+INC90LUg0LjQvdC40YbQuNCw0LvQuNC30LjRgNC+0LLQsNC90L4iKQoJfQoKCWN0eCwgY2FuY2VsIDo9IGNvbnRleHQuV2l0aFRpbWVvdXQoY29udGV4dC5CYWNrZ3JvdW5kKCksIDE1KnRpbWUuU2Vjb25kKQoJZGVmZXIgY2FuY2VsKCkKCglwYXNzLCBlcnIgOj0gcC5BY3RpdmF0ZShjdHgsIGFjY291bnRJRCkKCWlmIGVyciAhPSBuaWwgewoJCXJldHVybiBlcnIKCX0KCWVuZ2luZS5VcGRhdGVUb2tlbihwYXNzLlJhd1Rva2VuKQoJcmV0dXJuIG5pbAp9CgovLyBTaWduSW5QYXNzd29yZCBzaWducyBpbiB3aXRoIGVtYWlsICsgcGFzc3dvcmQgKFBCS0RGMiArIEhLREYgKyBIQVdLKSBhbmQgcmV0dXJucyBhIEpTT04gQWN0aW9uUmVzdWx0LgpmdW5jIFNpZ25JblBhc3N3b3JkKGVtYWlsLCBwYXNzd29yZCwgdW5ibG9ja0NvZGUgc3RyaW5nKSBzdHJpbmcgewoJbXUuTG9jaygpCglwIDo9IHBvb2wKCW11LlVubG9jaygpCglpZiBwID09IG5pbCB7CgkJcmV0dXJuIGpzb25SZXN1bHQoImVycm9yIiwgItCv0LTRgNC+INC10YnRkSDQvdC1INC40L3QuNGG0LjQsNC70LjQt9C40YDQvtCy0LDQvdC+IiwgZW1haWwpCgl9CgoJZW1haWwgPSBzdHJpbmdzLlRyaW1TcGFjZShlbWFpbCkKCWlmIGVtYWlsID09ICIiIHx8ICFzdHJpbmdzLkNvbnRhaW5zKGVtYWlsLCAiQCIpIHsKCQlyZXR1cm4ganNvblJlc3VsdCgiZXJyb3IiLCAi0JLQstC10LTQuNGC0LUg0LrQvtGA0YDQtdC60YLQvdGL0LkgRW1haWwg0LDQutC60LDRg9C90YLQsCBNb3ppbGxhIiwgZW1haWwpCgl9CglpZiBwYXNzd29yZCA9PSAiIiB7CgkJcmV0dXJuIGpzb25SZXN1bHQoImVycm9yIiwgItCS0LLQtdC00LjRgtC1INC/0LDRgNC+0LvRjCDQvtGCINCw0LrQutCw0YPQvdGC0LAgTW96aWxsYSIsIGVtYWlsKQoJfQoKCWN0eCwgY2FuY2VsIDo9IGNvbnRleHQuV2l0aFRpbWVvdXQoY29udGV4dC5CYWNrZ3JvdW5kKCksIDIyKnRpbWUuU2Vjb25kKQoJZGVmZXIgY2FuY2VsKCkKCglsb2dpblJlc3AsIGVyciA6PSBmeGEuTG9naW5XaXRoUGFzc3dvcmQoY3R4LCBlbWFpbCwgcGFzc3dvcmQsIHVuYmxvY2tDb2RlKQoJaWYgZXJyICE9IG5pbCB7CgkJdmFyIGFwaUVyciAqZnhhLkFQSUVycm9yCgkJaWYgZXJyb3JzLkFzKGVyciwgJmFwaUVycikgewoJCQlpZiBhcGlFcnIuU3RhdHVzID09IDQwNiB7CgkJCQlyZXR1cm4ganNvblJlc3VsdCgibmVlZF9icm93c2VyIiwgItCX0LDRidC40YLQsCBGYXN0bHkgKEhUVFAgNDA2KSDQvtGC0LrQu9C+0L3QuNC70LAg0L/RgNGP0LzQvtC5INC30LDQv9GA0L7RgS4g0J3QsNC20LzQuNGC0LUgwqvQkdGA0LDRg9C30LXRgMK7LiIsIGVtYWlsKQoJCQl9CgkJCWlmIGFwaUVyci5FcnJubyA9PSAxMjUgewoJCQkJXyA9IGZ4YS5TZW5kVW5ibG9ja0NvZGUoY3R4LCBlbWFpbCkKCQkJCXJldHVybiBqc29uUmVzdWx0KCJ1bmJsb2NrX2NvZGUiLCAiTW96aWxsYSDQt9Cw0L/RgNC+0YHQuNC70LAg0LrQvtC0INGA0LDQt9Cx0LvQvtC60LjRgNC+0LLQutC4INCy0YXQvtC00LAgKDgg0YHQuNC80LLQvtC70L7Qsiwg0L7RgtC/0YDQsNCy0LvQtdC9INCy0LDQvCDQvdCwIEVtYWlsKSIsIGVtYWlsKQoJCQl9CgkJCWlmIGFwaUVyci5FcnJubyA9PSAxMDIgewoJCQkJcmV0dXJuIGpzb25SZXN1bHQoImVycm9yIiwgItCQ0LrQutCw0YPQvdGCINGBINGC0LDQutC40LwgRW1haWwg0L3QtSDQvdCw0LnQtNC10L0g0LIgTW96aWxsYSIsIGVtYWlsKQoJCQl9CgkJCWlmIGFwaUVyci5FcnJubyA9PSAxMDMgewoJCQkJcmV0dXJuIGpzb25SZXN1bHQoImVycm9yIiwgItCd0LXQstC10YDQvdGL0Lkg0L/QsNGA0L7Qu9GMINC+0YIg0LDQutC60LDRg9C90YLQsCBNb3ppbGxhIiwgZW1haWwpCgkJCX0KCQl9CgkJcmV0dXJuIGpzb25SZXN1bHQoImVycm9yIiwgZXJyLkVycm9yKCksIGVtYWlsKQoJfQoKCWNhbm9uaWNhbEVtYWlsIDo9IGxvZ2luUmVzcC5FbWFpbAoJaWYgY2Fub25pY2FsRW1haWwgPT0gIiIgewoJCWNhbm9uaWNhbEVtYWlsID0gZW1haWwKCX0KCglpZiAhbG9naW5SZXNwLlZlcmlmaWVkIHsKCQltdS5Mb2NrKCkKCQlwZW5kaW5nRW1haWwgPSBjYW5vbmljYWxFbWFpbAoJCXBlbmRpbmdTZXNzaW9uSGV4ID0gbG9naW5SZXNwLlNlc3Npb25Ub2tlbgoJCXBlbmRpbmdWZXJpZnlNb2RlID0gbG9naW5SZXNwLlZlcmlmaWNhdGlvbk1ldGhvZAoJCW11LlVubG9jaygpCgoJCWlmIGxvZ2luUmVzcC5WZXJpZmljYXRpb25NZXRob2QgPT0gInRvdHAtMmZhIiB7CgkJCXJldHVybiBqc29uUmVzdWx0KCJ2ZXJpZnlfdG90cCIsICLQktCy0LXQtNC40YLQtSA2LdC30L3QsNGH0L3Ri9C5INC60L7QtCDQuNC3INC/0YDQuNC70L7QttC10L3QuNGPLdCw0YPRgtC10L3RgtC40YTQuNC60LDRgtC+0YDQsCAoMkZBKSIsIGNhbm9uaWNhbEVtYWlsKQoJCX0KCQlyZXR1cm4ganNvblJlc3VsdCgidmVyaWZ5X2VtYWlsIiwgIk1vemlsbGEg0L7RgtC/0YDQsNCy0LjQu9CwIDYt0LfQvdCw0YfQvdGL0Lkg0LrQvtC0INC/0L7QtNGC0LLQtdGA0LbQtNC10L3QuNGPINCy0YXQvtC00LAg0L3QsCAiK2Nhbm9uaWNhbEVtYWlsKyIuINCS0LLQtdC00LjRgtC1INC10LPQviDQvdC40LbQtToiLCBjYW5vbmljYWxFbWFpbCkKCX0KCglpZiBfLCBlcnIgOj0gcC5BZGRXaXRoU2Vzc2lvblRva2VuKGN0eCwgY2Fub25pY2FsRW1haWwsIGxvZ2luUmVzcC5TZXNzaW9uVG9rZW4pOyBlcnIgIT0gbmlsIHsKCQlyZXR1cm4ganNvblJlc3VsdCgiZXJyb3IiLCAi0J7RiNC40LHQutCwINCy0YvQv9GD0YHQutCwIFByb3h5UGFzczogIitlcnIuRXJyb3IoKSwgY2Fub25pY2FsRW1haWwpCgl9CglyZXR1cm4ganNvblJlc3VsdCgib2siLCAi0JDQutC60LDRg9C90YIgIitjYW5vbmljYWxFbWFpbCsiINGD0YHQv9C10YjQvdC+INC00L7QsdCw0LLQu9C10L0g0Lgg0LDQutGC0LjQstC40YDQvtCy0LDQvSDQsiBHdWFyZGlhbiIsIGNhbm9uaWNhbEVtYWlsKQp9CgovLyBWZXJpZnlTaWduSW5Db2RlIGNvbmZpcm1zIHRoZSBwZW5kaW5nIHNlc3Npb25Ub2tlbiB3aXRoIHRoZSA2LWRpZ2l0IGNvZGUgZnJvbSBlbWFpbCBvciAyRkEgYXV0aGVudGljYXRvci4KZnVuYyBWZXJpZnlTaWduSW5Db2RlKGNvZGUgc3RyaW5nKSBzdHJpbmcgewoJbXUuTG9jaygpCglwIDo9IHBvb2wKCWVtYWlsIDo9IHBlbmRpbmdFbWFpbAoJc2Vzc2lvbkhleCA6PSBwZW5kaW5nU2Vzc2lvbkhleAoJbW9kZSA6PSBwZW5kaW5nVmVyaWZ5TW9kZQoJbXUuVW5sb2NrKCkKCglpZiBwID09IG5pbCB8fCBzZXNzaW9uSGV4ID09ICIiIHsKCQlyZXR1cm4ganNvblJlc3VsdCgiZXJyb3IiLCAi0J3QtdGCINCw0LrRgtC40LLQvdC+0Lkg0YHQtdGB0YHQuNC4INC00LvRjyDQv9C+0LTRgtCy0LXRgNC20LTQtdC90LjRjy4g0J/QvtCy0YLQvtGA0LjRgtC1INCy0YXQvtC0LiIsIGVtYWlsKQoJfQoJY2xlYW5Db2RlIDo9IHN0cmluZ3MuVHJpbVNwYWNlKGNvZGUpCgoJY3R4LCBjYW5jZWwgOj0gY29udGV4dC5XaXRoVGltZW91dChjb250ZXh0LkJhY2tncm91bmQoKSwgMjIqdGltZS5TZWNvbmQpCglkZWZlciBjYW5jZWwoKQoKCWlmIGNsZWFuQ29kZSAhPSAiIiB7CgkJdmFyIGVyciBlcnJvcgoJCWlmIG1vZGUgPT0gInRvdHAtMmZhIiB7CgkJCWVyciA9IGZ4YS5WZXJpZnlTZXNzaW9uVE9UUChjdHgsIHNlc3Npb25IZXgsIGNsZWFuQ29kZSkKCQl9IGVsc2UgewoJCQllcnIgPSBmeGEuVmVyaWZ5U2Vzc2lvbkNvZGUoY3R4LCBzZXNzaW9uSGV4LCBjbGVhbkNvZGUpCgkJfQoJCWlmIGVyciAhPSBuaWwgewoJCQlpZiB2ZXJpZmllZCwgdkVyciA6PSBmeGEuU2Vzc2lvblZlcmlmaWVkKGN0eCwgc2Vzc2lvbkhleCk7IHZFcnIgIT0gbmlsIHx8ICF2ZXJpZmllZCB7CgkJCQlyZXR1cm4ganNvblJlc3VsdCgiZXJyb3IiLCAi0JrQvtC0INC90LUg0L/RgNC40L3Rj9GCIE1vemlsbGE6ICIrZXJyLkVycm9yKCksIGVtYWlsKQoJCQl9CgkJfQoJfSBlbHNlIHsKCQlpZiB2ZXJpZmllZCwgdkVyciA6PSBmeGEuU2Vzc2lvblZlcmlmaWVkKGN0eCwgc2Vzc2lvbkhleCk7IHZFcnIgIT0gbmlsIHx8ICF2ZXJpZmllZCB7CgkJCXJldHVybiBqc29uUmVzdWx0KCJlcnJvciIsICLQktCy0LXQtNC40YLQtSA2LdC30L3QsNGH0L3Ri9C5INC60L7QtCDQv9C+0LTRgtCy0LXRgNC20LTQtdC90LjRjyDQuNC3INC/0LjRgdGM0LzQsCBNb3ppbGxhIiwgZW1haWwpCgkJfQoJfQoKCWlmIF8sIGVyciA6PSBwLkFkZFdpdGhTZXNzaW9uVG9rZW4oY3R4LCBlbWFpbCwgc2Vzc2lvbkhleCk7IGVyciAhPSBuaWwgewoJCXZhciBhcGlFcnIgKmZ4YS5BUElFcnJvcgoJCWlmIGVycm9ycy5BcyhlcnIsICZhcGlFcnIpICYmIGFwaUVyci5FcnJubyA9PSAxMzggewoJCQlyZXR1cm4ganNvblJlc3VsdCgidmVyaWZ5X2VtYWlsIiwgItCh0LXRgdGB0LjRjyDQtdGJ0ZEg0L3QtSDQv9C+0LTRgtCy0LXRgNC20LTQtdC90LAuINCS0LLQtdC00LjRgtC1IDYt0LfQvdCw0YfQvdGL0Lkg0LrQvtC0INC40Lcg0L/QuNGB0YzQvNCwIE1vemlsbGE6IiwgZW1haWwpCgkJfQoJCXJldHVybiBqc29uUmVzdWx0KCJlcnJvciIsICLQntGI0LjQsdC60LAg0L7QsdC80LXQvdCwIE9BdXRoIC8gR3VhcmRpYW46ICIrZXJyLkVycm9yKCksIGVtYWlsKQoJfQoKCW11LkxvY2soKQoJcGVuZGluZ1Nlc3Npb25IZXggPSAiIgoJbXUuVW5sb2NrKCkKCglyZXR1cm4ganNvblJlc3VsdCgib2siLCAi0JDQutC60LDRg9C90YIgIitlbWFpbCsiINC/0L7QtNGC0LLQtdGA0LbQtNGR0L0g0Lgg0LDQutGC0LjQstC40YDQvtCy0LDQvSDQsiBHdWFyZGlhbiEiLCBlbWFpbCkKfQoKLy8gQWRkQWNjb3VudFBhc3N3b3JkIGlzIGtlcHQgZm9yIGJhY2t3YXJkIGNvbXBhdGliaWxpdHkgYW5kIGRlbGVnYXRlcyB0byBTaWduSW5QYXNzd29yZC4KZnVuYyBBZGRBY2NvdW50UGFzc3dvcmQoZW1haWwsIHBhc3N3b3JkIHN0cmluZykgZXJyb3IgewoJcmVzIDo9IFNpZ25JblBhc3N3b3JkKGVtYWlsLCBwYXNzd29yZCwgIiIpCgl2YXIgcGFyc2VkIEFjdGlvblJlc3VsdAoJXyA9IGpzb24uVW5tYXJzaGFsKFtdYnl0ZShyZXMpLCAmcGFyc2VkKQoJaWYgcGFyc2VkLlN0YXRlICE9ICJvayIgewoJCXJldHVybiBlcnJvcnMuTmV3KHBhcnNlZC5NZXNzYWdlKQoJfQoJcmV0dXJuIG5pbAp9CgovLyBBZGRBY2NvdW50U2Vzc2lvblRva2VuIGFkZHMgYW4gYWNjb3VudCB1c2luZyBhIDY0LWhleCBGeEEgc2Vzc2lvblRva2VuIGZyb20gV2ViQ2hhbm5lbCBvciBtYW51YWwgcGFzdGUuCmZ1bmMgQWRkQWNjb3VudFNlc3Npb25Ub2tlbihlbWFpbCwgc2Vzc2lvblRva2VuSGV4IHN0cmluZykgc3RyaW5nIHsKCW11LkxvY2soKQoJcCA6PSBwb29sCgltdS5VbmxvY2soKQoJaWYgcCA9PSBuaWwgewoJCXJldHVybiBqc29uUmVzdWx0KCJlcnJvciIsICLQr9C00YDQviDQvdC1INC40L3QuNGG0LjQsNC70LjQt9C40YDQvtCy0LDQvdC+IiwgZW1haWwpCgl9CgoJY2xlYW5Ub2tlbiA6PSBzdHJpbmdzLlRyaW1TcGFjZShzZXNzaW9uVG9rZW5IZXgpCglpZiBsZW4oY2xlYW5Ub2tlbikgIT0gNjQgewoJCXJldHVybiBqc29uUmVzdWx0KCJlcnJvciIsICJTZXNzaW9uVG9rZW4g0LTQvtC70LbQtdC9INGB0L7RgdGC0L7Rj9GC0Ywg0LjQtyA2NCBoZXgt0YHQuNC80LLQvtC70L7QsiIsIGVtYWlsKQoJfQoJY2xlYW5FbWFpbCA6PSBzdHJpbmdzLlRyaW1TcGFjZShlbWFpbCkKCWlmIGNsZWFuRW1haWwgPT0gIiIgewoJCWNsZWFuRW1haWwgPSAiZmlyZWZveC51c2VyQG1vemlsbGEub3JnIgoJfQoKCW11LkxvY2soKQoJcGVuZGluZ0VtYWlsID0gY2xlYW5FbWFpbAoJcGVuZGluZ1Nlc3Npb25IZXggPSBjbGVhblRva2VuCglwZW5kaW5nVmVyaWZ5TW9kZSA9ICJlbWFpbC0yZmEiCgltdS5VbmxvY2soKQoKCWN0eCwgY2FuY2VsIDo9IGNvbnRleHQuV2l0aFRpbWVvdXQoY29udGV4dC5CYWNrZ3JvdW5kKCksIDIwKnRpbWUuU2Vjb25kKQoJZGVmZXIgY2FuY2VsKCkKCgl2ZXJpZmllZCwgZXJyIDo9IGZ4YS5TZXNzaW9uVmVyaWZpZWQoY3R4LCBjbGVhblRva2VuKQoJaWYgZXJyICE9IG5pbCB8fCAhdmVyaWZpZWQgewoJCXJldHVybiBqc29uUmVzdWx0KAoJCQkidmVyaWZ5X2VtYWlsIiwKCQkJIk1vemlsbGEg0L7RgtC/0YDQsNCy0LjQu9CwIDYt0LfQvdCw0YfQvdGL0Lkg0LrQvtC0INC/0L7QtNGC0LLQtdGA0LbQtNC10L3QuNGPINCy0YXQvtC00LAg0L3QsCAiK2NsZWFuRW1haWwrIi4g0JLQstC10LTQuNGC0LUg0LrQvtC0INC40Lcg0L/QuNGB0YzQvNCwINC90LjQttC1OiIsCgkJCWNsZWFuRW1haWwsCgkJKQoJfQoKCWlmIF8sIGVyciA6PSBwLkFkZFdpdGhTZXNzaW9uVG9rZW4oY3R4LCBjbGVhbkVtYWlsLCBjbGVhblRva2VuKTsgZXJyICE9IG5pbCB7CgkJdmFyIGFwaUVyciAqZnhhLkFQSUVycm9yCgkJaWYgZXJyb3JzLkFzKGVyciwgJmFwaUVycikgJiYgYXBpRXJyLkVycm5vID09IDEzOCB7CgkJCXJldHVybiBqc29uUmVzdWx0KAoJCQkJInZlcmlmeV9lbWFpbCIsCgkJCQkiTW96aWxsYSDQvtGC0L/RgNCw0LLQuNC70LAgNi3Qt9C90LDRh9C90YvQuSDQutC+0LQg0L/QvtC00YLQstC10YDQttC00LXQvdC40Y8g0LLRhdC+0LTQsCDQvdCwICIrY2xlYW5FbWFpbCsiLiDQktCy0LXQtNC40YLQtSDQutC+0LQg0LjQtyDQv9C40YHRjNC80LAg0L3QuNC20LU6IiwKCQkJCWNsZWFuRW1haWwsCgkJCSkKCQl9CgkJcmV0dXJuIGpzb25SZXN1bHQoImVycm9yIiwgItCd0LUg0YPQtNCw0LvQvtGB0Ywg0L7QsdC80LXQvdGP0YLRjCBTZXNzaW9uVG9rZW46ICIrZXJyLkVycm9yKCksIGNsZWFuRW1haWwpCgl9CgoJbXUuTG9jaygpCglwZW5kaW5nU2Vzc2lvbkhleCA9ICIiCgltdS5VbmxvY2soKQoKCXJldHVybiBqc29uUmVzdWx0KCJvayIsICLQkNC60LrQsNGD0L3RgiAiK2NsZWFuRW1haWwrIiDRg9GB0L/QtdGI0L3QviDQtNC+0LHQsNCy0LvQtdC9IiwgY2xlYW5FbWFpbCkKfQoKZnVuYyBNb3ZlQWNjb3VudChhY2NvdW50SUQgc3RyaW5nLCBkZWx0YSBpbnQpIHsKCW11LkxvY2soKQoJcCA6PSBwb29sCgltdS5VbmxvY2soKQoJaWYgcCAhPSBuaWwgewoJCV8gPSBwLk1vdmUoYWNjb3VudElELCBkZWx0YSkKCX0KfQoKZnVuYyBUb2dnbGVBY2NvdW50RW5hYmxlZChhY2NvdW50SUQgc3RyaW5nKSB7CgltdS5Mb2NrKCkKCXAgOj0gcG9vbAoJbXUuVW5sb2NrKCkKCWlmIHAgIT0gbmlsIHsKCQlfID0gcC5Ub2dnbGVFbmFibGVkKGFjY291bnRJRCkKCX0KfQoKZnVuYyBSZW1vdmVBY2NvdW50KGFjY291bnRJRCBzdHJpbmcpIHsKCW11LkxvY2soKQoJcCA6PSBwb29sCgltdS5VbmxvY2soKQoJaWYgcCAhPSBuaWwgewoJCV8gPSBwLlJlbW92ZShhY2NvdW50SUQpCgl9Cn0KCmZ1bmMgU2V0VGhyZXNob2xkKHBlcmNlbnQgaW50KSB7CgltdS5Mb2NrKCkKCXAgOj0gcG9vbAoJbXUuVW5sb2NrKCkKCWlmIHAgIT0gbmlsIHsKCQlfID0gcC5TZXRUaHJlc2hvbGQocGVyY2VudCkKCX0KfQoKZnVuYyBTZXRQcm90b2NvbChwcm90byBzdHJpbmcpIHsKCW11LkxvY2soKQoJc2VsZWN0ZWRQcm90b2NvbCA9IHByb3RvCgltdS5VbmxvY2soKQp9CgovLyBTZXRMb2NhdGlvbiBjaGFuZ2VzIHRoZSBhY3RpdmUgc2VydmVyIGNvdW50cnkgY29kZSBhbmQgc3dpdGNoZXMgdGhlIHVwc3RyZWFtIEZhc3RseSBub2RlLgpmdW5jIFNldExvY2F0aW9uKGNvdW50cnlDb2RlIHN0cmluZykgewoJbXUuTG9jaygpCglzZWxlY3RlZENvZGUgPSBzdHJpbmdzLlRyaW1TcGFjZShjb3VudHJ5Q29kZSkKCWxvYyA6PSBjdXJyZW50TG9jYXRpb25Mb2NrZWQoKQoJbXUuVW5sb2NrKCkKCgllbmdpbmUuU3dpdGNoU2VydmVyKGxvYy5FbmRwb2ludCgpKQp9CgovLyBQaW5nQWxsTG9jYXRpb25zIG1lYXN1cmVzIHJlYWwgMS1SVFQgbGF0ZW5jeSBhY3Jvc3MgYWxsIE1vemlsbGEgbG9jYXRpb25zLgpmdW5jIFBpbmdBbGxMb2NhdGlvbnMoKSBlcnJvciB7CgltdS5Mb2NrKCkKCWxpc3QgOj0gYXBwZW5kKFtdc2VydmVybGlzdC5Mb2NhdGlvbihuaWwpLCBsb2NhdGlvbnMuLi4pCgltdS5VbmxvY2soKQoKCWN0eCwgY2FuY2VsIDo9IGNvbnRleHQuV2l0aFRpbWVvdXQoY29udGV4dC5CYWNrZ3JvdW5kKCksIDIwKnRpbWUuU2Vjb25kKQoJZGVmZXIgY2FuY2VsKCkKCgltZWFzdXJlZCA6PSBzZXJ2ZXJsaXN0Lk1lYXN1cmVMYXRlbmNpZXMoY3R4LCBsaXN0LCBmdW5jKGMgY29udGV4dC5Db250ZXh0LCBlbmRwb2ludCBzdHJpbmcpICh0aW1lLkR1cmF0aW9uLCBlcnJvcikgewoJCXJldHVybiB0dW5uZWwuUHJvYmVUTFNIYW5kc2hha2UoYywgZW5kcG9pbnQpCgl9KQoKCW11LkxvY2soKQoJbG9jYXRpb25zID0gbWVhc3VyZWQKCW11LlVubG9jaygpCglyZXR1cm4gbmlsCn0KCmZ1bmMgU29ja3NQb3J0KCkgaW50IHsKCXJldHVybiBlbmdpbmUuUG9ydCgpCn0KCi8vIFN0YXR1c0pTT04gcmV0dXJucyB0aGUgY29tcGxldGUgc25hcHNob3QgZm9yIHRoZSBBbmRyb2lkIEpldHBhY2sgQ29tcG9zZSBVSS4KZnVuYyBTdGF0dXNKU09OKCkgc3RyaW5nIHsKCW11LkxvY2soKQoJcCA6PSBwb29sCglpc0Nvbm4gOj0gY29ubmVjdGVkCglzZWxDb2RlIDo9IHNlbGVjdGVkQ29kZQoJc2VsUHJvdG8gOj0gc2VsZWN0ZWRQcm90b2NvbAoJY3VyTG9jIDo9IGN1cnJlbnRMb2NhdGlvbkxvY2tlZCgpCglsb2NzQ29weSA6PSBhcHBlbmQoW11zZXJ2ZXJsaXN0LkxvY2F0aW9uKG5pbCksIGxvY2F0aW9ucy4uLikKCW11LlVubG9jaygpCgoJdmFyIGFjY3MgW10qYWNjb3VudHMuQWNjb3VudAoJdGhyZXNob2xkIDo9IDk1CglpZiBwICE9IG5pbCB7CgkJYWNjcywgdGhyZXNob2xkID0gcC5TbmFwc2hvdEFjY291bnRzKCkKCX0KCglwYXlsb2FkIDo9IG1hcFtzdHJpbmddYW55ewoJCSJjb25uZWN0ZWQiOiAgICAgICAgIGlzQ29ubiwKCQkic29ja3NfcG9ydCI6ICAgICAgICBlbmdpbmUuUG9ydCgpLAoJCSJzZWxlY3RlZF9sb2NhdGlvbiI6IHNlbENvZGUsCgkJInR1bm5lbF9wcm90b2NvbCI6ICAgc2VsUHJvdG8sCgkJImxvY2F0aW9uIjogICAgICAgICAgY3VyTG9jLAoJCSJ0aHJlc2hvbGRfcGVyY2VudCI6IHRocmVzaG9sZCwKCQkiYWNjb3VudHMiOiAgICAgICAgICBhY2NzLAoJCSJsb2NhdGlvbnMiOiAgICAgICAgIGxvY3NDb3B5LAoJfQoJZGF0YSwgXyA6PSBqc29uLk1hcnNoYWwocGF5bG9hZCkKCXJldHVybiBzdHJpbmcoZGF0YSkKfQoKZnVuYyBjdXJyZW50TG9jYXRpb25Mb2NrZWQoKSBzZXJ2ZXJsaXN0LkxvY2F0aW9uIHsKCWlmIHNlbGVjdGVkQ29kZSA9PSAiIiB8fCBzdHJpbmdzLkVxdWFsRm9sZChzZWxlY3RlZENvZGUsICJSRUMiKSB8fCBzdHJpbmdzLkVxdWFsRm9sZChzZWxlY3RlZENvZGUsICJmYXN0ZXN0IikgewoJCWlmIGxlbihsb2NhdGlvbnMpID4gMCB7CgkJCXJldHVybiBsb2NhdGlvbnNbMF0KCQl9Cgl9Cglmb3IgXywgbCA6PSByYW5nZSBsb2NhdGlvbnMgewoJCWlmIHN0cmluZ3MuRXF1YWxGb2xkKGwuQ29kZSwgc2VsZWN0ZWRDb2RlKSB7CgkJCXJldHVybiBsCgkJfQoJfQoJaWYgbGVuKGxvY2F0aW9ucykgPiAwIHsKCQlyZXR1cm4gbG9jYXRpb25zWzBdCgl9CglyZXR1cm4gc2VydmVybGlzdC5EZWZhdWx0TG9jYXRpb25zKClbMF0KfQo=
+// Package mobile is the gomobile bind entry point for Android (libs/core.aar).
+// Contains ONLY Mozilla account management (with 2FA/email code & WebChannel support),
+// automatic 5 GB quota rotation, Remote Settings server selection with real 1-RTT
+// latency measurement, and the local SOCKS5 -> H2 CONNECT tunnel.
+package mobile
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"mozillavpnlite/core/accounts"
+	"mozillavpnlite/core/fxa"
+	"mozillavpnlite/core/serverlist"
+	"mozillavpnlite/core/tunnel"
+)
+
+var (
+	mu           sync.Mutex
+	pool         *accounts.Pool
+	engine       = tunnel.NewEngine()
+	locations    = serverlist.DefaultLocations()
+	selectedCode = "DE"
+	// Default is HTTP/2 CONNECT: HTTP/3 MASQUE (QUIC/UDP) is heavily
+	// unreliable on many networks and often does not work in practice.
+	// The tunnel engine always speaks HTTP/2 CONNECT; the protocol value
+	// is currently a UI label kept for a future real MASQUE transport.
+	selectedProtocol = "HTTP/2 CONNECT (TLS 1.3)"
+	connected        = false
+
+	// Pending 2-step login state when FxA requests an email/TOTP verification code
+	pendingEmail      string
+	pendingSessionHex string
+	pendingVerifyMode string // "email-2fa" or "totp-2fa"
+)
+
+type ActionResult struct {
+	State   string `json:"state"`   // "ok", "verify_email", "verify_totp", "unblock_code", "need_browser", "error"
+	Message string `json:"message"` // Human-readable Russian status or error
+	Email   string `json:"email,omitempty"`
+}
+
+func jsonResult(state, message, email string) string {
+	b, _ := json.Marshal(ActionResult{State: state, Message: message, Email: email})
+	return string(b)
+}
+
+// Start initializes the account pool and server list in dataDir.
+func Start(dataDir string, autoConnect bool) error {
+	mu.Lock()
+	if pool != nil {
+		mu.Unlock()
+		if autoConnect {
+			return Connect()
+		}
+		return nil
+	}
+	p, err := accounts.LoadOrCreatePool(dataDir)
+	if err != nil {
+		mu.Unlock()
+		return err
+	}
+	pool = p
+	mu.Unlock()
+
+	engine.OnTrafficBytes = func(delta int64) {
+		if p.RecordTraffic(delta) {
+			go rotateActiveAccount(p)
+		}
+	}
+	engine.OnQuotaHeaders = func(h http.Header) {
+		p.UpdateQuotaFromHeaders(h)
+	}
+	engine.OnQuotaExhaust = func() {
+		rotateActiveAccount(p)
+	}
+
+	// Automatically fetch all 32 countries and measure real 1-RTT pings from the device
+	go func() {
+		// 1. Measure real pings for initial list immediately (~1.5s)
+		_ = PingAllLocations()
+
+		// 2. Fetch full Remote Settings server list and measure real pings for all 32 locations
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		list, fetchErr := serverlist.Fetch(ctx)
+		cancel()
+		if fetchErr == nil && len(list) > 0 {
+			pingCtx, pingCancel := context.WithTimeout(context.Background(), 20*time.Second)
+			measured := serverlist.MeasureLatencies(pingCtx, list, func(c context.Context, endpoint string) (time.Duration, error) {
+				return tunnel.ProbeTLSHandshake(c, endpoint)
+			})
+			pingCancel()
+			mu.Lock()
+			locations = measured
+			mu.Unlock()
+		}
+	}()
+
+	// Refresh active account quota in background on startup
+	go func() {
+		if active := p.ActiveAccount(); active != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+			defer cancel()
+			_, _ = p.EnsureFreshPass(ctx, active)
+		}
+	}()
+
+	if autoConnect {
+		return Connect()
+	}
+	return nil
+}
+
+func rotateActiveAccount(p *accounts.Pool) {
+	active := p.ActiveAccount()
+	if active == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	if pass, err := p.RotateToNextReady(ctx, active.ID); err == nil && pass != nil {
+		engine.UpdateToken(pass.RawToken)
+	}
+}
+
+// Running reports whether the core has been initialized.
+func Running() bool {
+	mu.Lock()
+	defer mu.Unlock()
+	return pool != nil
+}
+
+// Connect obtains a fresh Guardian ProxyPass from the active Mozilla account
+// (rotating automatically if its 5 GB quota is exhausted) and starts the local tunnel.
+func Connect() error {
+	mu.Lock()
+	p := pool
+	loc := currentLocationLocked()
+	mu.Unlock()
+
+	if p == nil {
+		return errors.New("ядро не инициализировано")
+	}
+	active := p.ActiveAccount()
+	if active == nil {
+		return errors.New("добавьте хотя бы один аккаунт Mozilla во вкладке Аккаунты")
+	}
+
+	// Start local SOCKS5 listener immediately using warm token if available
+	var initialToken string
+	if active.LastPass != nil && active.LastPass.RawToken != "" {
+		initialToken = active.LastPass.RawToken
+	}
+
+	if initialToken != "" && active.HasWarmPass() {
+		if _, err := engine.Start("127.0.0.1:0", loc.Endpoint(), initialToken); err != nil {
+			return err
+		}
+		mu.Lock()
+		connected = true
+		mu.Unlock()
+
+		// Refresh quota in the background without delaying tunnel startup
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+			defer cancel()
+			if pass, err := p.EnsureFreshPass(ctx, active); err == nil && pass != nil {
+				engine.UpdateToken(pass.RawToken)
+			}
+		}()
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	pass, err := p.EnsureFreshPass(ctx, active)
+	if err != nil {
+		return err
+	}
+
+	_, err = engine.Start("127.0.0.1:0", loc.Endpoint(), pass.RawToken)
+	if err != nil {
+		return err
+	}
+
+	mu.Lock()
+	connected = true
+	mu.Unlock()
+	return nil
+}
+
+// Reconnect immediately resets the HTTP/2 session when Android switches networks
+// (e.g. Wi-Fi <-> LTE/5G) without waiting for old TCP timeouts.
+func Reconnect() {
+	engine.ResetSession()
+	mu.Lock()
+	p := pool
+	isConn := connected
+	mu.Unlock()
+	if !isConn || p == nil {
+		return
+	}
+	go func() {
+		if active := p.ActiveAccount(); active != nil && !active.HasWarmPass() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if pass, err := p.EnsureFreshPass(ctx, active); err == nil && pass != nil {
+				engine.UpdateToken(pass.RawToken)
+			}
+		}
+	}()
+}
+
+// Disconnect stops the local SOCKS5 tunnel.
+func Disconnect() {
+	engine.Stop()
+	mu.Lock()
+	connected = false
+	mu.Unlock()
+}
+
+// SwitchAccount immediately switches the active Mozilla account and hot-swaps
+// its ProxyPass JWT in the running tunnel (0 ms if pre-warmed).
+func SwitchAccount(accountID string) error {
+	mu.Lock()
+	p := pool
+	mu.Unlock()
+	if p == nil {
+		return errors.New("ядро не инициализировано")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	pass, err := p.Activate(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	engine.UpdateToken(pass.RawToken)
+	return nil
+}
+
+// SignInPassword signs in with email + password (PBKDF2 + HKDF + HAWK) and returns a JSON ActionResult.
+func SignInPassword(email, password, unblockCode string) string {
+	mu.Lock()
+	p := pool
+	mu.Unlock()
+	if p == nil {
+		return jsonResult("error", "Ядро ещё не инициализировано", email)
+	}
+
+	email = strings.TrimSpace(email)
+	if email == "" || !strings.Contains(email, "@") {
+		return jsonResult("error", "Введите корректный Email аккаунта Mozilla", email)
+	}
+	if password == "" {
+		return jsonResult("error", "Введите пароль от аккаунта Mozilla", email)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 22*time.Second)
+	defer cancel()
+
+	loginResp, err := fxa.LoginWithPassword(ctx, email, password, unblockCode)
+	if err != nil {
+		var apiErr *fxa.APIError
+		if errors.As(err, &apiErr) {
+			if apiErr.Status == 406 {
+				return jsonResult("need_browser", "Защита Fastly (HTTP 406) отклонила прямой запрос. Нажмите «Браузер».", email)
+			}
+			if apiErr.Errno == 125 {
+				_ = fxa.SendUnblockCode(ctx, email)
+				return jsonResult("unblock_code", "Mozilla запросила код разблокировки входа (8 символов, отправлен вам на Email)", email)
+			}
+			if apiErr.Errno == 102 {
+				return jsonResult("error", "Аккаунт с таким Email не найден в Mozilla", email)
+			}
+			if apiErr.Errno == 103 {
+				return jsonResult("error", "Неверный пароль от аккаунта Mozilla", email)
+			}
+		}
+		return jsonResult("error", err.Error(), email)
+	}
+
+	canonicalEmail := loginResp.Email
+	if canonicalEmail == "" {
+		canonicalEmail = email
+	}
+
+	if !loginResp.Verified {
+		mu.Lock()
+		pendingEmail = canonicalEmail
+		pendingSessionHex = loginResp.SessionToken
+		pendingVerifyMode = loginResp.VerificationMethod
+		mu.Unlock()
+
+		if loginResp.VerificationMethod == "totp-2fa" {
+			return jsonResult("verify_totp", "Введите 6-значный код из приложения-аутентификатора (2FA)", canonicalEmail)
+		}
+		return jsonResult("verify_email", "Mozilla отправила 6-значный код подтверждения входа на "+canonicalEmail+". Введите его ниже:", canonicalEmail)
+	}
+
+	if _, err := p.AddWithSessionToken(ctx, canonicalEmail, loginResp.SessionToken); err != nil {
+		return jsonResult("error", "Ошибка выпуска ProxyPass: "+err.Error(), canonicalEmail)
+	}
+	return jsonResult("ok", "Аккаунт "+canonicalEmail+" успешно добавлен и активирован в Guardian", canonicalEmail)
+}
+
+// VerifySignInCode confirms the pending sessionToken with the 6-digit code from email or 2FA authenticator.
+func VerifySignInCode(code string) string {
+	mu.Lock()
+	p := pool
+	email := pendingEmail
+	sessionHex := pendingSessionHex
+	mode := pendingVerifyMode
+	mu.Unlock()
+
+	if p == nil || sessionHex == "" {
+		return jsonResult("error", "Нет активной сессии для подтверждения. Повторите вход.", email)
+	}
+	cleanCode := strings.TrimSpace(code)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 22*time.Second)
+	defer cancel()
+
+	if cleanCode != "" {
+		var err error
+		if mode == "totp-2fa" {
+			err = fxa.VerifySessionTOTP(ctx, sessionHex, cleanCode)
+		} else {
+			err = fxa.VerifySessionCode(ctx, sessionHex, cleanCode)
+		}
+		if err != nil {
+			if verified, vErr := fxa.SessionVerified(ctx, sessionHex); vErr != nil || !verified {
+				return jsonResult("error", "Код не принят Mozilla: "+err.Error(), email)
+			}
+		}
+	} else {
+		if verified, vErr := fxa.SessionVerified(ctx, sessionHex); vErr != nil || !verified {
+			return jsonResult("error", "Введите 6-значный код подтверждения из письма Mozilla", email)
+		}
+	}
+
+	if _, err := p.AddWithSessionToken(ctx, email, sessionHex); err != nil {
+		var apiErr *fxa.APIError
+		if errors.As(err, &apiErr) && apiErr.Errno == 138 {
+			return jsonResult("verify_email", "Сессия ещё не подтверждена. Введите 6-значный код из письма Mozilla:", email)
+		}
+		return jsonResult("error", "Ошибка обмена OAuth / Guardian: "+err.Error(), email)
+	}
+
+	mu.Lock()
+	pendingSessionHex = ""
+	mu.Unlock()
+
+	return jsonResult("ok", "Аккаунт "+email+" подтверждён и активирован в Guardian!", email)
+}
+
+// AddAccountPassword is kept for backward compatibility and delegates to SignInPassword.
+func AddAccountPassword(email, password string) error {
+	res := SignInPassword(email, password, "")
+	var parsed ActionResult
+	_ = json.Unmarshal([]byte(res), &parsed)
+	if parsed.State != "ok" {
+		return errors.New(parsed.Message)
+	}
+	return nil
+}
+
+// AddAccountSessionToken adds an account using a 64-hex FxA sessionToken from WebChannel or manual paste.
+func AddAccountSessionToken(email, sessionTokenHex string) string {
+	mu.Lock()
+	p := pool
+	mu.Unlock()
+	if p == nil {
+		return jsonResult("error", "Ядро не инициализировано", email)
+	}
+
+	cleanToken := strings.TrimSpace(sessionTokenHex)
+	if len(cleanToken) != 64 {
+		return jsonResult("error", "SessionToken должен состоять из 64 hex-символов", email)
+	}
+	cleanEmail := strings.TrimSpace(email)
+	if cleanEmail == "" {
+		cleanEmail = "firefox.user@mozilla.org"
+	}
+
+	mu.Lock()
+	pendingEmail = cleanEmail
+	pendingSessionHex = cleanToken
+	pendingVerifyMode = "email-2fa"
+	mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	verified, err := fxa.SessionVerified(ctx, cleanToken)
+	if err != nil || !verified {
+		return jsonResult(
+			"verify_email",
+			"Mozilla отправила 6-значный код подтверждения входа на "+cleanEmail+". Введите код из письма ниже:",
+			cleanEmail,
+		)
+	}
+
+	if _, err := p.AddWithSessionToken(ctx, cleanEmail, cleanToken); err != nil {
+		var apiErr *fxa.APIError
+		if errors.As(err, &apiErr) && apiErr.Errno == 138 {
+			return jsonResult(
+				"verify_email",
+				"Mozilla отправила 6-значный код подтверждения входа на "+cleanEmail+". Введите код из письма ниже:",
+				cleanEmail,
+			)
+		}
+		return jsonResult("error", "Не удалось обменять SessionToken: "+err.Error(), cleanEmail)
+	}
+
+	mu.Lock()
+	pendingSessionHex = ""
+	mu.Unlock()
+
+	return jsonResult("ok", "Аккаунт "+cleanEmail+" успешно добавлен", cleanEmail)
+}
+
+func MoveAccount(accountID string, delta int) {
+	mu.Lock()
+	p := pool
+	mu.Unlock()
+	if p != nil {
+		_ = p.Move(accountID, delta)
+	}
+}
+
+func ToggleAccountEnabled(accountID string) {
+	mu.Lock()
+	p := pool
+	mu.Unlock()
+	if p != nil {
+		_ = p.ToggleEnabled(accountID)
+	}
+}
+
+func RemoveAccount(accountID string) {
+	mu.Lock()
+	p := pool
+	mu.Unlock()
+	if p != nil {
+		_ = p.Remove(accountID)
+	}
+}
+
+func SetThreshold(percent int) {
+	mu.Lock()
+	p := pool
+	mu.Unlock()
+	if p != nil {
+		_ = p.SetThreshold(percent)
+	}
+}
+
+func SetProtocol(proto string) {
+	mu.Lock()
+	selectedProtocol = proto
+	mu.Unlock()
+}
+
+// SetLocation changes the active server country code and switches the upstream Fastly node.
+func SetLocation(countryCode string) {
+	mu.Lock()
+	selectedCode = strings.TrimSpace(countryCode)
+	loc := currentLocationLocked()
+	mu.Unlock()
+
+	engine.SwitchServer(loc.Endpoint())
+}
+
+// PingAllLocations measures real 1-RTT latency across all Mozilla locations.
+func PingAllLocations() error {
+	mu.Lock()
+	list := append([]serverlist.Location(nil), locations...)
+	mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	measured := serverlist.MeasureLatencies(ctx, list, func(c context.Context, endpoint string) (time.Duration, error) {
+		return tunnel.ProbeTLSHandshake(c, endpoint)
+	})
+
+	mu.Lock()
+	locations = measured
+	mu.Unlock()
+	return nil
+}
+
+func SocksPort() int {
+	return engine.Port()
+}
+
+// StatusJSON returns the complete snapshot for the Android Jetpack Compose UI.
+func StatusJSON() string {
+	mu.Lock()
+	p := pool
+	isConn := connected
+	selCode := selectedCode
+	selProto := selectedProtocol
+	curLoc := currentLocationLocked()
+	locsCopy := append([]serverlist.Location(nil), locations...)
+	mu.Unlock()
+
+	var accs []*accounts.Account
+	threshold := 95
+	if p != nil {
+		accs, threshold = p.SnapshotAccounts()
+	}
+
+	payload := map[string]any{
+		"connected":         isConn,
+		"socks_port":        engine.Port(),
+		"selected_location": selCode,
+		"tunnel_protocol":   selProto,
+		"location":          curLoc,
+		"threshold_percent": threshold,
+		"accounts":          accs,
+		"locations":         locsCopy,
+	}
+	data, _ := json.Marshal(payload)
+	return string(data)
+}
+
+func currentLocationLocked() serverlist.Location {
+	if selectedCode == "" || strings.EqualFold(selectedCode, "REC") || strings.EqualFold(selectedCode, "fastest") {
+		if len(locations) > 0 {
+			return locations[0]
+		}
+	}
+	for _, l := range locations {
+		if strings.EqualFold(l.Code, selectedCode) {
+			return l
+		}
+	}
+	if len(locations) > 0 {
+		return locations[0]
+	}
+	return serverlist.DefaultLocations()[0]
+}

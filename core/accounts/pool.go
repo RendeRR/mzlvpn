@@ -1,1 +1,461 @@
-Ly8gUGFja2FnZSBhY2NvdW50cyBtYW5hZ2VzIHRoZSBwb29sIG9mIE1vemlsbGEgYWNjb3VudHMsIGNyZWRlbnRpYWwKLy8gcGVyc2lzdGVuY2UsIGluc3RhbnQgMS10YXAgcHJvZmlsZSBzd2l0Y2hpbmcsIGxpdmUgdHJhZmZpYyBhY2NvdW50aW5nLAovLyBiYWNrZ3JvdW5kIHByZS13YXJtaW5nIG9mIHRoZSBzdGFuZGJ5IGFjY291bnQgYXQgKFRocmVzaG9sZCAtIDUlKSwgYW5kCi8vIDAtbXMgYXV0b21hdGljIGZhaWxvdmVyIHdoZW4gYW4gYWNjb3VudCdzIDUgR0IgbW9udGhseSBxdW90YSByZWFjaGVzCi8vIHRoZSBjb25maWd1cmVkIHRocmVzaG9sZC4KcGFja2FnZSBhY2NvdW50cwoKaW1wb3J0ICgKCSJjb250ZXh0IgoJImNyeXB0by9yYW5kIgoJImVuY29kaW5nL2hleCIKCSJlbmNvZGluZy9qc29uIgoJImVycm9ycyIKCSJuZXQvaHR0cCIKCSJvcyIKCSJwYXRoL2ZpbGVwYXRoIgoJInN5bmMiCgkidGltZSIKCgkibW96aWxsYXZwbmxpdGUvY29yZS9meGEiCgkibW96aWxsYXZwbmxpdGUvY29yZS9ndWFyZGlhbiIKKQoKdHlwZSBTdGF0dXMgc3RyaW5nCgpjb25zdCAoCglTdGF0dXNSZWFkeSAgICAgICAgICBTdGF0dXMgPSAicmVhZHkiCglTdGF0dXNSZXNlcnZlZCAgICAgICBTdGF0dXMgPSAicmVzZXJ2ZWQiCglTdGF0dXNSZWF1dGhSZXF1aXJlZCBTdGF0dXMgPSAicmVhdXRoX3JlcXVpcmVkIgopCgp0eXBlIEFjY291bnQgc3RydWN0IHsKCUlEICAgICAgIHN0cmluZyAgICAgICAgICAgICAgIGBqc29uOiJpZCJgCglFbWFpbCAgICBzdHJpbmcgICAgICAgICAgICAgICBganNvbjoiZW1haWwiYAoJUG9zaXRpb24gaW50ICAgICAgICAgICAgICAgICAgYGpzb246InBvc2l0aW9uImAKCUFjdGl2ZSAgIGJvb2wgICAgICAgICAgICAgICAgIGBqc29uOiJhY3RpdmUiYAoJRW5hYmxlZCAgYm9vbCAgICAgICAgICAgICAgICAgYGpzb246ImVuYWJsZWQiYAoJU3RhdHVzICAgU3RhdHVzICAgICAgICAgICAgICAgYGpzb246InN0YXR1cyJgCglSZWFzb24gICBzdHJpbmcgICAgICAgICAgICAgICBganNvbjoicmVhc29uLG9taXRlbXB0eSJgCglUb2tlbnMgICBmeGEuT0F1dGhUb2tlbnMgICAgICBganNvbjoidG9rZW5zImAKCUxhc3RQYXNzICpndWFyZGlhbi5Qcm94eVBhc3MgIGBqc29uOiJsYXN0X3Bhc3Msb21pdGVtcHR5ImAKCVVzYWdlICAgICpndWFyZGlhbi5RdW90YVVzYWdlIGBqc29uOiJ1c2FnZSxvbWl0ZW1wdHkiYAp9CgpmdW5jIChhICpBY2NvdW50KSBIYXNXYXJtUGFzcygpIGJvb2wgewoJcmV0dXJuIGEgIT0gbmlsICYmIGEuTGFzdFBhc3MgIT0gbmlsICYmIGEuTGFzdFBhc3MuUmF3VG9rZW4gIT0gIiIgJiYKCQl0aW1lLk5vdygpLkJlZm9yZShhLkxhc3RQYXNzLkV4cGlyZXNBdC5BZGQoLTUqdGltZS5NaW51dGUpKQp9Cgp0eXBlIFBvb2wgc3RydWN0IHsKCW11ICAgICAgICAgICAgICAgc3luYy5NdXRleAoJcHJld2FybWluZyAgICAgICBib29sCgl1bnNhdmVkQnl0ZXMgICAgIGludDY0CglmaWxlUGF0aCAgICAgICAgIHN0cmluZwoJVGhyZXNob2xkUGVyY2VudCBpbnQgICAgICAgIGBqc29uOiJ0aHJlc2hvbGRfcGVyY2VudCJgCglBY2NvdW50cyAgICAgICAgIFtdKkFjY291bnQgYGpzb246ImFjY291bnRzImAKfQoKZnVuYyBMb2FkT3JDcmVhdGVQb29sKGRhdGFEaXIgc3RyaW5nKSAoKlBvb2wsIGVycm9yKSB7CglpZiBlcnIgOj0gb3MuTWtkaXJBbGwoZGF0YURpciwgMDcwMCk7IGVyciAhPSBuaWwgewoJCXJldHVybiBuaWwsIGVycgoJfQoJZnAgOj0gZmlsZXBhdGguSm9pbihkYXRhRGlyLCAiYWNjb3VudHNfcG9vbC5qc29uIikKCXAgOj0gJlBvb2x7CgkJZmlsZVBhdGg6ICAgICAgICAgZnAsCgkJVGhyZXNob2xkUGVyY2VudDogOTUsCgkJQWNjb3VudHM6ICAgICAgICAgW10qQWNjb3VudHt9LAoJfQoJaWYgZGF0YSwgZXJyIDo9IG9zLlJlYWRGaWxlKGZwKTsgZXJyID09IG5pbCB7CgkJXyA9IGpzb24uVW5tYXJzaGFsKGRhdGEsIHApCgl9CglpZiBwLlRocmVzaG9sZFBlcmNlbnQgPCA1MCB8fCBwLlRocmVzaG9sZFBlcmNlbnQgPiAxMDAgewoJCXAuVGhyZXNob2xkUGVyY2VudCA9IDk1Cgl9CglwLnJlY29tcHV0ZUxvY2tlZCgpCglyZXR1cm4gcCwgbmlsCn0KCmZ1bmMgKHAgKlBvb2wpIHNhdmVMb2NrZWQoKSBlcnJvciB7CglwLnJlY29tcHV0ZUxvY2tlZCgpCglkYXRhLCBlcnIgOj0ganNvbi5NYXJzaGFsSW5kZW50KHAsICIiLCAiICAiKQoJaWYgZXJyICE9IG5pbCB7CgkJcmV0dXJuIGVycgoJfQoJcmV0dXJuIG9zLldyaXRlRmlsZShwLmZpbGVQYXRoLCBkYXRhLCAwNjAwKQp9CgpmdW5jIChwICpQb29sKSByZWNvbXB1dGVMb2NrZWQoKSB7Cglmb3IgaSwgYWNjIDo9IHJhbmdlIHAuQWNjb3VudHMgewoJCWFjYy5Qb3NpdGlvbiA9IGkgKyAxCgkJaWYgYWNjLlVzYWdlID09IG5pbCB8fCBhY2MuVXNhZ2UuTGltaXRCeXRlcyA8PSAwIHsKCQkJYWNjLlVzYWdlID0gZ3VhcmRpYW4uRGVmYXVsdFF1b3RhVXNhZ2UoKQoJCX0KCQlpZiBhY2MuVXNhZ2UuUmVtYWluaW5nQnl0ZXMgPCAwIHsKCQkJYWNjLlVzYWdlLlJlbWFpbmluZ0J5dGVzID0gMAoJCX0KCQlpZiBhY2MuVXNhZ2UuUmVtYWluaW5nQnl0ZXMgPiBhY2MuVXNhZ2UuTGltaXRCeXRlcyB7CgkJCWFjYy5Vc2FnZS5SZW1haW5pbmdCeXRlcyA9IGFjYy5Vc2FnZS5MaW1pdEJ5dGVzCgkJfQoJCWlmIGFjYy5Vc2FnZS5SZW1haW5pbmdCeXRlcyA8PSAwIHx8IGFjYy5Vc2FnZS5Vc2VkUGVyY2VudCgpID49IGZsb2F0NjQocC5UaHJlc2hvbGRQZXJjZW50KSB7CgkJCWlmIGxlbihwLkFjY291bnRzKSA+IDEgewoJCQkJYWNjLlN0YXR1cyA9IFN0YXR1c1Jlc2VydmVkCgkJCQlhY2MuUmVhc29uID0gItCU0L7RgdGC0LjQs9C90YPRgiDQv9C+0YDQvtCzINC80LXRgdGP0YfQvdC+0Lkg0LrQstC+0YLRiyA1INCT0JEiCgkJCX0KCQl9IGVsc2UgaWYgYWNjLlN0YXR1cyA9PSBTdGF0dXNSZXNlcnZlZCB7CgkJCWFjYy5TdGF0dXMgPSBTdGF0dXNSZWFkeQoJCQlhY2MuUmVhc29uID0gIiIKCQl9Cgl9Cn0KCi8vIFJlY29yZFRyYWZmaWMgc3VidHJhY3RzIHRyYW5zZmVycmVkIGJ5dGVzIGZyb20gdGhlIGFjdGl2ZSBhY2NvdW50J3MgUmVtYWluaW5nQnl0ZXMKLy8gYW5kIHJldHVybnMgdHJ1ZSBpZiB0aGUgYWN0aXZlIGFjY291bnQgaGFzIGNyb3NzZWQgVGhyZXNob2xkUGVyY2VudC4KZnVuYyAocCAqUG9vbCkgUmVjb3JkVHJhZmZpYyhkZWx0YUJ5dGVzIGludDY0KSAoc2hvdWxkUm90YXRlIGJvb2wpIHsKCWlmIGRlbHRhQnl0ZXMgPD0gMCB7CgkJcmV0dXJuIGZhbHNlCgl9CglwLm11LkxvY2soKQoJZGVmZXIgcC5tdS5VbmxvY2soKQoKCXZhciBhY3RpdmUgKkFjY291bnQKCWZvciBfLCBhIDo9IHJhbmdlIHAuQWNjb3VudHMgewoJCWlmIGEuQWN0aXZlIHsKCQkJYWN0aXZlID0gYQoJCQlicmVhawoJCX0KCX0KCWlmIGFjdGl2ZSA9PSBuaWwgewoJCXJldHVybiBmYWxzZQoJfQoJaWYgYWN0aXZlLlVzYWdlID09IG5pbCB8fCBhY3RpdmUuVXNhZ2UuTGltaXRCeXRlcyA8PSAwIHsKCQlhY3RpdmUuVXNhZ2UgPSBndWFyZGlhbi5EZWZhdWx0UXVvdGFVc2FnZSgpCgl9CglhY3RpdmUuVXNhZ2UuUmVtYWluaW5nQnl0ZXMgLT0gZGVsdGFCeXRlcwoJaWYgYWN0aXZlLlVzYWdlLlJlbWFpbmluZ0J5dGVzIDwgMCB7CgkJYWN0aXZlLlVzYWdlLlJlbWFpbmluZ0J5dGVzID0gMAoJfQoKCXAudW5zYXZlZEJ5dGVzICs9IGRlbHRhQnl0ZXMKCWlmIHAudW5zYXZlZEJ5dGVzID49IDI1NioxMDI0IHsKCQlwLnVuc2F2ZWRCeXRlcyA9IDAKCQlfID0gcC5zYXZlTG9ja2VkKCkKCX0KCgl0aHJlc2hvbGQgOj0gZmxvYXQ2NChwLlRocmVzaG9sZFBlcmNlbnQpCgl1c2VkUGN0IDo9IGFjdGl2ZS5Vc2FnZS5Vc2VkUGVyY2VudCgpCglpZiB1c2VkUGN0ID49ICh0aHJlc2hvbGQgLSA1LjApIHsKCQlnbyBwLlByZXdhcm1OZXh0UmVhZHkoYWN0aXZlLklEKQoJfQoJcmV0dXJuIHVzZWRQY3QgPj0gdGhyZXNob2xkICYmIGxlbihwLkFjY291bnRzKSA+IDEKfQoKLy8gVXBkYXRlUXVvdGFGcm9tSGVhZGVycyB1cGRhdGVzIHRoZSBhY3RpdmUgYWNjb3VudCdzIHF1b3RhIGlmIFgtUXVvdGEtTGltaXQgLyBYLVF1b3RhLVJlbWFpbmluZyBhcmUgcHJlc2VudC4KZnVuYyAocCAqUG9vbCkgVXBkYXRlUXVvdGFGcm9tSGVhZGVycyhoIGh0dHAuSGVhZGVyKSB7CglwYXJzZWQgOj0gZ3VhcmRpYW4uUGFyc2VRdW90YUhlYWRlcnMoaCkKCWlmIHBhcnNlZCA9PSBuaWwgfHwgcGFyc2VkLlVubGltaXRlZCB7CgkJcmV0dXJuCgl9CglwLm11LkxvY2soKQoJZGVmZXIgcC5tdS5VbmxvY2soKQoJZm9yIF8sIGEgOj0gcmFuZ2UgcC5BY2NvdW50cyB7CgkJaWYgYS5BY3RpdmUgewoJCQlhLlVzYWdlID0gcGFyc2VkCgkJCV8gPSBwLnNhdmVMb2NrZWQoKQoJCQlicmVhawoJCX0KCX0KfQoKLy8gQWRkV2l0aFNlc3Npb25Ub2tlbiBleGNoYW5nZXMgYW4gRnhBIHNlc3Npb25Ub2tlbiBmb3IgT0F1dGggdG9rZW5zLCBmZXRjaGVzIGEKLy8gR3VhcmRpYW4gUHJveHlQYXNzLCBhbmQgYXBwZW5kcyB0aGUgYWNjb3VudCB0byB0aGUgcm90YXRpb24gcG9vbC4KZnVuYyAocCAqUG9vbCkgQWRkV2l0aFNlc3Npb25Ub2tlbihjdHggY29udGV4dC5Db250ZXh0LCBlbWFpbCwgc2Vzc2lvblRva2VuSGV4IHN0cmluZykgKCpBY2NvdW50LCBlcnJvcikgewoJdG9rZW5zLCBlcnIgOj0gZnhhLkV4Y2hhbmdlU2Vzc2lvbkZvck9BdXRoKGN0eCwgc2Vzc2lvblRva2VuSGV4KQoJaWYgZXJyICE9IG5pbCB7CgkJcmV0dXJuIG5pbCwgZXJyCgl9CglwYXNzLCBlcnIgOj0gZ3VhcmRpYW4uRmV0Y2hQcm94eVBhc3MoY3R4LCB0b2tlbnMuQWNjZXNzVG9rZW4pCglpZiBlcnIgIT0gbmlsIHsKCQlyZXR1cm4gbmlsLCBlcnIKCX0KCgl2YXIgaWRCeXRlcyBbNl1ieXRlCglfLCBfID0gcmFuZC5SZWFkKGlkQnl0ZXNbOl0pCgoJcC5tdS5Mb2NrKCkKCWRlZmVyIHAubXUuVW5sb2NrKCkKCgl1c2FnZSA6PSBwYXNzLlVzYWdlCglpZiB1c2FnZSA9PSBuaWwgfHwgdXNhZ2UuTGltaXRCeXRlcyA8PSAwIHsKCQl1c2FnZSA9IGd1YXJkaWFuLkRlZmF1bHRRdW90YVVzYWdlKCkKCX0KCglhY2MgOj0gJkFjY291bnR7CgkJSUQ6ICAgICAgICJhY2MtIiArIGhleC5FbmNvZGVUb1N0cmluZyhpZEJ5dGVzWzpdKSwKCQlFbWFpbDogICAgZW1haWwsCgkJQWN0aXZlOiAgIGxlbihwLkFjY291bnRzKSA9PSAwLAoJCUVuYWJsZWQ6ICB0cnVlLAoJCVN0YXR1czogICBTdGF0dXNSZWFkeSwKCQlUb2tlbnM6ICAgKnRva2VucywKCQlMYXN0UGFzczogcGFzcywKCQlVc2FnZTogICAgdXNhZ2UsCgl9CglwLkFjY291bnRzID0gYXBwZW5kKHAuQWNjb3VudHMsIGFjYykKCV8gPSBwLnNhdmVMb2NrZWQoKQoJcmV0dXJuIGFjYywgbmlsCn0KCi8vIEFjdGl2YXRlIGltbWVkaWF0ZWx5IG1ha2VzIHRoZSBnaXZlbiBhY2NvdW50IElEIGFjdGl2ZS4KZnVuYyAocCAqUG9vbCkgQWN0aXZhdGUoY3R4IGNvbnRleHQuQ29udGV4dCwgaWQgc3RyaW5nKSAoKmd1YXJkaWFuLlByb3h5UGFzcywgZXJyb3IpIHsKCXAubXUuTG9jaygpCgl2YXIgdGFyZ2V0ICpBY2NvdW50Cglmb3IgXywgYSA6PSByYW5nZSBwLkFjY291bnRzIHsKCQlpZiBhLklEID09IGlkIHsKCQkJdGFyZ2V0ID0gYQoJCQlicmVhawoJCX0KCX0KCWlmIHRhcmdldCA9PSBuaWwgewoJCXAubXUuVW5sb2NrKCkKCQlyZXR1cm4gbmlsLCBlcnJvcnMuTmV3KCLQsNC60LrQsNGD0L3RgiDQvdC1INC90LDQudC00LXQvSIpCgl9Cglmb3IgXywgYSA6PSByYW5nZSBwLkFjY291bnRzIHsKCQlhLkFjdGl2ZSA9IChhLklEID09IGlkKQoJfQoJdGFyZ2V0LkVuYWJsZWQgPSB0cnVlCgl3YXJtUGFzcyA6PSB0YXJnZXQuTGFzdFBhc3MKCWlzV2FybSA6PSB0YXJnZXQuSGFzV2FybVBhc3MoKQoJXyA9IHAuc2F2ZUxvY2tlZCgpCglwLm11LlVubG9jaygpCgoJaWYgaXNXYXJtIHsKCQlnbyBmdW5jKGFjYyAqQWNjb3VudCkgewoJCQliZ0N0eCwgY2FuY2VsIDo9IGNvbnRleHQuV2l0aFRpbWVvdXQoY29udGV4dC5CYWNrZ3JvdW5kKCksIDEwKnRpbWUuU2Vjb25kKQoJCQlkZWZlciBjYW5jZWwoKQoJCQlfLCBfID0gcC5FbnN1cmVGcmVzaFBhc3MoYmdDdHgsIGFjYykKCQl9KHRhcmdldCkKCQlyZXR1cm4gd2FybVBhc3MsIG5pbAoJfQoKCXJldHVybiBwLkVuc3VyZUZyZXNoUGFzcyhjdHgsIHRhcmdldCkKfQoKLy8gRW5zdXJlRnJlc2hQYXNzIHJldHVybnMgYSB2YWxpZCBQcm94eVBhc3MgZm9yIGFjYywgcmVmcmVzaGluZyBPQXV0aCBvciByb3RhdGluZwovLyB0byB0aGUgbmV4dCBhY2NvdW50IGluIHRoZSBwb29sIGlmIGFjYydzIHF1b3RhIGlzIGV4aGF1c3RlZC4KZnVuYyAocCAqUG9vbCkgRW5zdXJlRnJlc2hQYXNzKGN0eCBjb250ZXh0LkNvbnRleHQsIGFjYyAqQWNjb3VudCkgKCpndWFyZGlhbi5Qcm94eVBhc3MsIGVycm9yKSB7CglpZiB0aW1lLk5vdygpLkFmdGVyKGFjYy5Ub2tlbnMuRXhwaXJlc0F0LkFkZCgtMiAqIHRpbWUuTWludXRlKSkgewoJCXJlZnJlc2hlZCwgZXJyIDo9IGZ4YS5SZWZyZXNoQWNjZXNzVG9rZW4oY3R4LCBhY2MuVG9rZW5zLlJlZnJlc2hUb2tlbikKCQlpZiBlcnIgIT0gbmlsIHsKCQkJcC5tdS5Mb2NrKCkKCQkJaWYgZXJyb3JzLklzKGVyciwgZnhhLkVyclJlYXV0aFJlcXVpcmVkKSB7CgkJCQlhY2MuU3RhdHVzID0gU3RhdHVzUmVhdXRoUmVxdWlyZWQKCQkJfQoJCQlfID0gcC5zYXZlTG9ja2VkKCkKCQkJcC5tdS5VbmxvY2soKQoJCQlyZXR1cm4gbmlsLCBlcnIKCQl9CgkJcC5tdS5Mb2NrKCkKCQlhY2MuVG9rZW5zID0gKnJlZnJlc2hlZAoJCV8gPSBwLnNhdmVMb2NrZWQoKQoJCXAubXUuVW5sb2NrKCkKCX0KCglwYXNzLCBlcnIgOj0gZ3VhcmRpYW4uRmV0Y2hQcm94eVBhc3MoY3R4LCBhY2MuVG9rZW5zLkFjY2Vzc1Rva2VuKQoJcC5tdS5Mb2NrKCkKCXRocmVzaG9sZCA6PSBmbG9hdDY0KHAuVGhyZXNob2xkUGVyY2VudCkKCWlmIHBhc3MgIT0gbmlsICYmIHBhc3MuUmF3VG9rZW4gIT0gIiIgewoJCS8vIE5ldmVyIG92ZXJ3cml0ZSBhIGdvb2QgY2FjaGVkIHBhc3Mgd2l0aCBhbiBlbXB0eSBvbmU6IG9uIEhUVFAgNDI5CgkJLy8gR3VhcmRpYW4gcmV0dXJucyBhIHVzYWdlLW9ubHkgUHJveHlQYXNzIHdpdGggbm8gdG9rZW4uCgkJYWNjLkxhc3RQYXNzID0gcGFzcwoJCWlmIHBhc3MuVXNhZ2UgIT0gbmlsICYmICFwYXNzLlVzYWdlLlVubGltaXRlZCAmJiBwYXNzLlVzYWdlLkxpbWl0Qnl0ZXMgPiAwIHsKCQkJYWNjLlVzYWdlID0gcGFzcy5Vc2FnZQoJCX0gZWxzZSBpZiBhY2MuVXNhZ2UgPT0gbmlsIHx8IGFjYy5Vc2FnZS5MaW1pdEJ5dGVzIDw9IDAgewoJCQlhY2MuVXNhZ2UgPSBndWFyZGlhbi5EZWZhdWx0UXVvdGFVc2FnZSgpCgkJfQoJfQoJXyA9IHAuc2F2ZUxvY2tlZCgpCglwLm11LlVubG9jaygpCgoJaWYgZXJyb3JzLklzKGVyciwgZ3VhcmRpYW4uRXJyUXVvdGFFeGNlZWRlZCkgfHwgKGFjYy5Vc2FnZSAhPSBuaWwgJiYgYWNjLlVzYWdlLlVzZWRQZXJjZW50KCkgPj0gdGhyZXNob2xkKSB7CgkJcmV0dXJuIHAuUm90YXRlVG9OZXh0UmVhZHkoY3R4LCBhY2MuSUQpCgl9CgoJaWYgYWNjLlVzYWdlICE9IG5pbCAmJiBhY2MuVXNhZ2UuVXNlZFBlcmNlbnQoKSA+PSAodGhyZXNob2xkLTUuMCkgewoJCWdvIHAuUHJld2FybU5leHRSZWFkeShhY2MuSUQpCgl9CgoJcmV0dXJuIHBhc3MsIGVycgp9CgovLyBQcmV3YXJtTmV4dFJlYWR5IHJlZnJlc2hlcyBPQXV0aCBhbmQgY2FjaGVzIGEgZnJlc2ggUHJveHlQYXNzIEpXVCBvbiB0aGUgbmV4dAovLyByZWFkeSBzdGFuZGJ5IGFjY291bnQgaW4gdGhlIGJhY2tncm91bmQgc28gZmFpbG92ZXIgaGFwcGVucyBpbiAwIG1zLgpmdW5jIChwICpQb29sKSBQcmV3YXJtTmV4dFJlYWR5KGFjdGl2ZUlEIHN0cmluZykgewoJcC5tdS5Mb2NrKCkKCWlmIHAucHJld2FybWluZyB7CgkJcC5tdS5VbmxvY2soKQoJCXJldHVybgoJfQoJdmFyIHN0YW5kYnkgKkFjY291bnQKCWZvciBfLCBhIDo9IHJhbmdlIHAuQWNjb3VudHMgewoJCWlmIGEuSUQgIT0gYWN0aXZlSUQgJiYgYS5FbmFibGVkICYmIGEuU3RhdHVzID09IFN0YXR1c1JlYWR5IHsKCQkJc3RhbmRieSA9IGEKCQkJYnJlYWsKCQl9Cgl9CglpZiBzdGFuZGJ5ID09IG5pbCB8fCBzdGFuZGJ5Lkhhc1dhcm1QYXNzKCkgewoJCXAubXUuVW5sb2NrKCkKCQlyZXR1cm4KCX0KCXAucHJld2FybWluZyA9IHRydWUKCXAubXUuVW5sb2NrKCkKCglkZWZlciBmdW5jKCkgewoJCXAubXUuTG9jaygpCgkJcC5wcmV3YXJtaW5nID0gZmFsc2UKCQlwLm11LlVubG9jaygpCgl9KCkKCgljdHgsIGNhbmNlbCA6PSBjb250ZXh0LldpdGhUaW1lb3V0KGNvbnRleHQuQmFja2dyb3VuZCgpLCAxMip0aW1lLlNlY29uZCkKCWRlZmVyIGNhbmNlbCgpCglfLCBfID0gcC5FbnN1cmVGcmVzaFBhc3MoY3R4LCBzdGFuZGJ5KQp9CgovLyBSb3RhdGVUb05leHRSZWFkeSBmaW5kcyB0aGUgbmV4dCBlbmFibGVkIGFjY291bnQgd2l0aCByZW1haW5pbmcgcXVvdGEgYW5kIGFjdGl2YXRlcyBpdC4KZnVuYyAocCAqUG9vbCkgUm90YXRlVG9OZXh0UmVhZHkoY3R4IGNvbnRleHQuQ29udGV4dCwgc2tpcElEIHN0cmluZykgKCpndWFyZGlhbi5Qcm94eVBhc3MsIGVycm9yKSB7CglwLm11LkxvY2soKQoJdmFyIGNhbmRpZGF0ZSAqQWNjb3VudAoJZm9yIF8sIGEgOj0gcmFuZ2UgcC5BY2NvdW50cyB7CgkJaWYgYS5JRCAhPSBza2lwSUQgJiYgYS5FbmFibGVkICYmIGEuU3RhdHVzID09IFN0YXR1c1JlYWR5IHsKCQkJY2FuZGlkYXRlID0gYQoJCQlicmVhawoJCX0KCX0KCWlmIGNhbmRpZGF0ZSA9PSBuaWwgewoJCXAubXUuVW5sb2NrKCkKCQlyZXR1cm4gbmlsLCBlcnJvcnMuTmV3KCLQvdC10YIg0LTQvtGB0YLRg9C/0L3Ri9GFINGA0LXQt9C10YDQstC90YvRhSDQsNC60LrQsNGD0L3RgtC+0LIg0YHQviDRgdCy0L7QsdC+0LTQvdC+0Lkg0LrQstC+0YLQvtC5IikKCX0KCWZvciBfLCBhIDo9IHJhbmdlIHAuQWNjb3VudHMgewoJCWEuQWN0aXZlID0gKGEuSUQgPT0gY2FuZGlkYXRlLklEKQoJfQoJd2FybVBhc3MgOj0gY2FuZGlkYXRlLkxhc3RQYXNzCglpc1dhcm0gOj0gY2FuZGlkYXRlLkhhc1dhcm1QYXNzKCkKCV8gPSBwLnNhdmVMb2NrZWQoKQoJcC5tdS5VbmxvY2soKQoKCWlmIGlzV2FybSB7CgkJcmV0dXJuIHdhcm1QYXNzLCBuaWwKCX0KCXJldHVybiBwLkVuc3VyZUZyZXNoUGFzcyhjdHgsIGNhbmRpZGF0ZSkKfQoKZnVuYyAocCAqUG9vbCkgVG9nZ2xlRW5hYmxlZChpZCBzdHJpbmcpIGVycm9yIHsKCXAubXUuTG9jaygpCglkZWZlciBwLm11LlVubG9jaygpCglmb3IgXywgYSA6PSByYW5nZSBwLkFjY291bnRzIHsKCQlpZiBhLklEID09IGlkIHsKCQkJYS5FbmFibGVkID0gIWEuRW5hYmxlZAoJCQlpZiAhYS5FbmFibGVkICYmIGEuQWN0aXZlIHsKCQkJCWEuQWN0aXZlID0gZmFsc2UKCQkJCWZvciBfLCBvdGhlciA6PSByYW5nZSBwLkFjY291bnRzIHsKCQkJCQlpZiBvdGhlci5JRCAhPSBpZCAmJiBvdGhlci5FbmFibGVkIHsKCQkJCQkJb3RoZXIuQWN0aXZlID0gdHJ1ZQoJCQkJCQlicmVhawoJCQkJCX0KCQkJCX0KCQkJfQoJCQlyZXR1cm4gcC5zYXZlTG9ja2VkKCkKCQl9Cgl9CglyZXR1cm4gbmlsCn0KCmZ1bmMgKHAgKlBvb2wpIE1vdmUoaWQgc3RyaW5nLCBkZWx0YSBpbnQpIGVycm9yIHsKCXAubXUuTG9jaygpCglkZWZlciBwLm11LlVubG9jaygpCglpZHggOj0gLTEKCWZvciBpLCBhIDo9IHJhbmdlIHAuQWNjb3VudHMgewoJCWlmIGEuSUQgPT0gaWQgewoJCQlpZHggPSBpCgkJCWJyZWFrCgkJfQoJfQoJaWYgaWR4IDwgMCB7CgkJcmV0dXJuIGVycm9ycy5OZXcoItCw0LrQutCw0YPQvdGCINC90LUg0L3QsNC50LTQtdC9IikKCX0KCW5leHQgOj0gaWR4ICsgZGVsdGEKCWlmIG5leHQgPj0gMCAmJiBuZXh0IDwgbGVuKHAuQWNjb3VudHMpIHsKCQlwLkFjY291bnRzW2lkeF0sIHAuQWNjb3VudHNbbmV4dF0gPSBwLkFjY291bnRzW25leHRdLCBwLkFjY291bnRzW2lkeF0KCX0KCXJldHVybiBwLnNhdmVMb2NrZWQoKQp9CgpmdW5jIChwICpQb29sKSBSZW1vdmUoaWQgc3RyaW5nKSBlcnJvciB7CglwLm11LkxvY2soKQoJZGVmZXIgcC5tdS5VbmxvY2soKQoJZm9yIGksIGEgOj0gcmFuZ2UgcC5BY2NvdW50cyB7CgkJaWYgYS5JRCA9PSBpZCB7CgkJCXdhc0FjdGl2ZSA6PSBhLkFjdGl2ZQoJCQlwLkFjY291bnRzID0gYXBwZW5kKHAuQWNjb3VudHNbOmldLCBwLkFjY291bnRzW2krMTpdLi4uKQoJCQlpZiB3YXNBY3RpdmUgJiYgbGVuKHAuQWNjb3VudHMpID4gMCB7CgkJCQlwLkFjY291bnRzWzBdLkFjdGl2ZSA9IHRydWUKCQkJfQoJCQlyZXR1cm4gcC5zYXZlTG9ja2VkKCkKCQl9Cgl9CglyZXR1cm4gbmlsCn0KCmZ1bmMgKHAgKlBvb2wpIFNldFRocmVzaG9sZChwZXJjZW50IGludCkgZXJyb3IgewoJcC5tdS5Mb2NrKCkKCWRlZmVyIHAubXUuVW5sb2NrKCkKCWlmIHBlcmNlbnQgPCA1MCB7CgkJcGVyY2VudCA9IDUwCgl9CglpZiBwZXJjZW50ID4gMTAwIHsKCQlwZXJjZW50ID0gMTAwCgl9CglwLlRocmVzaG9sZFBlcmNlbnQgPSBwZXJjZW50CglyZXR1cm4gcC5zYXZlTG9ja2VkKCkKfQoKZnVuYyAocCAqUG9vbCkgQWN0aXZlQWNjb3VudCgpICpBY2NvdW50IHsKCXAubXUuTG9jaygpCglkZWZlciBwLm11LlVubG9jaygpCglmb3IgXywgYSA6PSByYW5nZSBwLkFjY291bnRzIHsKCQlpZiBhLkFjdGl2ZSB7CgkJCXJldHVybiBhCgkJfQoJfQoJaWYgbGVuKHAuQWNjb3VudHMpID4gMCB7CgkJcC5BY2NvdW50c1swXS5BY3RpdmUgPSB0cnVlCgkJcmV0dXJuIHAuQWNjb3VudHNbMF0KCX0KCXJldHVybiBuaWwKfQoKZnVuYyAocCAqUG9vbCkgU25hcHNob3RBY2NvdW50cygpIChbXSpBY2NvdW50LCBpbnQpIHsKCXAubXUuTG9jaygpCglkZWZlciBwLm11LlVubG9jaygpCglwLnJlY29tcHV0ZUxvY2tlZCgpCgkvLyBEZWVwLWNvcHk6IGNhbGxlcnMgSlNPTi1tYXJzaGFsIHRoZSBzbmFwc2hvdCB3aGlsZSBSZWNvcmRUcmFmZmljIGFuZAoJLy8gRW5zdXJlRnJlc2hQYXNzIGtlZXAgbXV0YXRpbmcgdGhlIGxpdmUgYWNjb3VudHMg4oCUIHNoYXJpbmcgcG9pbnRlcnMKCS8vIGhlcmUgd2FzIGEgZGF0YSByYWNlLgoJb3V0IDo9IG1ha2UoW10qQWNjb3VudCwgMCwgbGVuKHAuQWNjb3VudHMpKQoJZm9yIF8sIGEgOj0gcmFuZ2UgcC5BY2NvdW50cyB7CgkJY3AgOj0gKmEKCQlpZiBhLlVzYWdlICE9IG5pbCB7CgkJCXVzYWdlIDo9ICphLlVzYWdlCgkJCWNwLlVzYWdlID0gJnVzYWdlCgkJfQoJCWlmIGEuTGFzdFBhc3MgIT0gbmlsIHsKCQkJbHAgOj0gKmEuTGFzdFBhc3MKCQkJaWYgYS5MYXN0UGFzcy5Vc2FnZSAhPSBuaWwgewoJCQkJbHBVc2FnZSA6PSAqYS5MYXN0UGFzcy5Vc2FnZQoJCQkJbHAuVXNhZ2UgPSAmbHBVc2FnZQoJCQl9CgkJCWNwLkxhc3RQYXNzID0gJmxwCgkJfQoJCW91dCA9IGFwcGVuZChvdXQsICZjcCkKCX0KCXJldHVybiBvdXQsIHAuVGhyZXNob2xkUGVyY2VudAp9Cg==
+// Package accounts manages the pool of Mozilla accounts, credential
+// persistence, instant 1-tap profile switching, live traffic accounting,
+// background pre-warming of the standby account at (Threshold - 5%), and
+// 0-ms automatic failover when an account's 5 GB monthly quota reaches
+// the configured threshold.
+package accounts
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sync"
+	"time"
+
+	"mozillavpnlite/core/fxa"
+	"mozillavpnlite/core/guardian"
+)
+
+type Status string
+
+const (
+	StatusReady          Status = "ready"
+	StatusReserved       Status = "reserved"
+	StatusReauthRequired Status = "reauth_required"
+)
+
+type Account struct {
+	ID       string               `json:"id"`
+	Email    string               `json:"email"`
+	Position int                  `json:"position"`
+	Active   bool                 `json:"active"`
+	Enabled  bool                 `json:"enabled"`
+	Status   Status               `json:"status"`
+	Reason   string               `json:"reason,omitempty"`
+	Tokens   fxa.OAuthTokens      `json:"tokens"`
+	LastPass *guardian.ProxyPass  `json:"last_pass,omitempty"`
+	Usage    *guardian.QuotaUsage `json:"usage,omitempty"`
+}
+
+func (a *Account) HasWarmPass() bool {
+	return a != nil && a.LastPass != nil && a.LastPass.RawToken != "" &&
+		time.Now().Before(a.LastPass.ExpiresAt.Add(-5*time.Minute))
+}
+
+type Pool struct {
+	mu               sync.Mutex
+	prewarming       bool
+	unsavedBytes     int64
+	filePath         string
+	ThresholdPercent int        `json:"threshold_percent"`
+	Accounts         []*Account `json:"accounts"`
+}
+
+func LoadOrCreatePool(dataDir string) (*Pool, error) {
+	if err := os.MkdirAll(dataDir, 0700); err != nil {
+		return nil, err
+	}
+	fp := filepath.Join(dataDir, "accounts_pool.json")
+	p := &Pool{
+		filePath:         fp,
+		ThresholdPercent: 95,
+		Accounts:         []*Account{},
+	}
+	if data, err := os.ReadFile(fp); err == nil {
+		_ = json.Unmarshal(data, p)
+	}
+	if p.ThresholdPercent < 50 || p.ThresholdPercent > 100 {
+		p.ThresholdPercent = 95
+	}
+	p.recomputeLocked()
+	return p, nil
+}
+
+func (p *Pool) saveLocked() error {
+	p.recomputeLocked()
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p.filePath, data, 0600)
+}
+
+func (p *Pool) recomputeLocked() {
+	for i, acc := range p.Accounts {
+		acc.Position = i + 1
+		if acc.Usage == nil || acc.Usage.LimitBytes <= 0 {
+			acc.Usage = guardian.DefaultQuotaUsage()
+		}
+		if acc.Usage.RemainingBytes < 0 {
+			acc.Usage.RemainingBytes = 0
+		}
+		if acc.Usage.RemainingBytes > acc.Usage.LimitBytes {
+			acc.Usage.RemainingBytes = acc.Usage.LimitBytes
+		}
+		if acc.Usage.RemainingBytes <= 0 || acc.Usage.UsedPercent() >= float64(p.ThresholdPercent) {
+			if len(p.Accounts) > 1 {
+				acc.Status = StatusReserved
+				acc.Reason = "Достигнут порог месячной квоты 5 ГБ"
+			}
+		} else if acc.Status == StatusReserved {
+			acc.Status = StatusReady
+			acc.Reason = ""
+		}
+	}
+}
+
+// RecordTraffic subtracts transferred bytes from the active account's RemainingBytes
+// and returns true if the active account has crossed ThresholdPercent.
+func (p *Pool) RecordTraffic(deltaBytes int64) (shouldRotate bool) {
+	if deltaBytes <= 0 {
+		return false
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	var active *Account
+	for _, a := range p.Accounts {
+		if a.Active {
+			active = a
+			break
+		}
+	}
+	if active == nil {
+		return false
+	}
+	if active.Usage == nil || active.Usage.LimitBytes <= 0 {
+		active.Usage = guardian.DefaultQuotaUsage()
+	}
+	active.Usage.RemainingBytes -= deltaBytes
+	if active.Usage.RemainingBytes < 0 {
+		active.Usage.RemainingBytes = 0
+	}
+
+	p.unsavedBytes += deltaBytes
+	if p.unsavedBytes >= 256*1024 {
+		p.unsavedBytes = 0
+		_ = p.saveLocked()
+	}
+
+	threshold := float64(p.ThresholdPercent)
+	usedPct := active.Usage.UsedPercent()
+	if usedPct >= (threshold - 5.0) {
+		go p.PrewarmNextReady(active.ID)
+	}
+	return usedPct >= threshold && len(p.Accounts) > 1
+}
+
+// UpdateQuotaFromHeaders updates the active account's quota if X-Quota-Limit / X-Quota-Remaining are present.
+func (p *Pool) UpdateQuotaFromHeaders(h http.Header) {
+	parsed := guardian.ParseQuotaHeaders(h)
+	if parsed == nil || parsed.Unlimited {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, a := range p.Accounts {
+		if a.Active {
+			a.Usage = parsed
+			_ = p.saveLocked()
+			break
+		}
+	}
+}
+
+// AddWithSessionToken exchanges an FxA sessionToken for OAuth tokens, fetches a
+// Guardian ProxyPass, and appends the account to the rotation pool.
+func (p *Pool) AddWithSessionToken(ctx context.Context, email, sessionTokenHex string) (*Account, error) {
+	tokens, err := fxa.ExchangeSessionForOAuth(ctx, sessionTokenHex)
+	if err != nil {
+		return nil, err
+	}
+	pass, err := guardian.FetchProxyPass(ctx, tokens.AccessToken)
+	if err != nil {
+		return nil, err
+	}
+
+	var idBytes [6]byte
+	_, _ = rand.Read(idBytes[:])
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	usage := pass.Usage
+	if usage == nil || usage.LimitBytes <= 0 {
+		usage = guardian.DefaultQuotaUsage()
+	}
+
+	acc := &Account{
+		ID:       "acc-" + hex.EncodeToString(idBytes[:]),
+		Email:    email,
+		Active:   len(p.Accounts) == 0,
+		Enabled:  true,
+		Status:   StatusReady,
+		Tokens:   *tokens,
+		LastPass: pass,
+		Usage:    usage,
+	}
+	p.Accounts = append(p.Accounts, acc)
+	_ = p.saveLocked()
+	return acc, nil
+}
+
+// Activate immediately makes the given account ID active.
+func (p *Pool) Activate(ctx context.Context, id string) (*guardian.ProxyPass, error) {
+	p.mu.Lock()
+	var target *Account
+	for _, a := range p.Accounts {
+		if a.ID == id {
+			target = a
+			break
+		}
+	}
+	if target == nil {
+		p.mu.Unlock()
+		return nil, errors.New("аккаунт не найден")
+	}
+	for _, a := range p.Accounts {
+		a.Active = (a.ID == id)
+	}
+	target.Enabled = true
+	warmPass := target.LastPass
+	isWarm := target.HasWarmPass()
+	_ = p.saveLocked()
+	p.mu.Unlock()
+
+	if isWarm {
+		go func(acc *Account) {
+			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			_, _ = p.EnsureFreshPass(bgCtx, acc)
+		}(target)
+		return warmPass, nil
+	}
+
+	return p.EnsureFreshPass(ctx, target)
+}
+
+// EnsureFreshPass returns a valid ProxyPass for acc, refreshing OAuth or rotating
+// to the next account in the pool if acc's quota is exhausted.
+func (p *Pool) EnsureFreshPass(ctx context.Context, acc *Account) (*guardian.ProxyPass, error) {
+	if time.Now().After(acc.Tokens.ExpiresAt.Add(-2 * time.Minute)) {
+		refreshed, err := fxa.RefreshAccessToken(ctx, acc.Tokens.RefreshToken)
+		if err != nil {
+			p.mu.Lock()
+			if errors.Is(err, fxa.ErrReauthRequired) {
+				acc.Status = StatusReauthRequired
+			}
+			_ = p.saveLocked()
+			p.mu.Unlock()
+			return nil, err
+		}
+		p.mu.Lock()
+		acc.Tokens = *refreshed
+		_ = p.saveLocked()
+		p.mu.Unlock()
+	}
+
+	pass, err := guardian.FetchProxyPass(ctx, acc.Tokens.AccessToken)
+	p.mu.Lock()
+	threshold := float64(p.ThresholdPercent)
+	if pass != nil && pass.RawToken != "" {
+		// Never overwrite a good cached pass with an empty one: on HTTP 429
+		// Guardian returns a usage-only ProxyPass with no token.
+		acc.LastPass = pass
+		if pass.Usage != nil && !pass.Usage.Unlimited && pass.Usage.LimitBytes > 0 {
+			acc.Usage = pass.Usage
+		} else if acc.Usage == nil || acc.Usage.LimitBytes <= 0 {
+			acc.Usage = guardian.DefaultQuotaUsage()
+		}
+	}
+	_ = p.saveLocked()
+	p.mu.Unlock()
+
+	if errors.Is(err, guardian.ErrQuotaExceeded) || (acc.Usage != nil && acc.Usage.UsedPercent() >= threshold) {
+		return p.RotateToNextReady(ctx, acc.ID)
+	}
+
+	if acc.Usage != nil && acc.Usage.UsedPercent() >= (threshold-5.0) {
+		go p.PrewarmNextReady(acc.ID)
+	}
+
+	return pass, err
+}
+
+// PrewarmNextReady refreshes OAuth and caches a fresh ProxyPass JWT on the next
+// ready standby account in the background so failover happens in 0 ms.
+func (p *Pool) PrewarmNextReady(activeID string) {
+	p.mu.Lock()
+	if p.prewarming {
+		p.mu.Unlock()
+		return
+	}
+	var standby *Account
+	for _, a := range p.Accounts {
+		if a.ID != activeID && a.Enabled && a.Status == StatusReady {
+			standby = a
+			break
+		}
+	}
+	if standby == nil || standby.HasWarmPass() {
+		p.mu.Unlock()
+		return
+	}
+	p.prewarming = true
+	p.mu.Unlock()
+
+	defer func() {
+		p.mu.Lock()
+		p.prewarming = false
+		p.mu.Unlock()
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	_, _ = p.EnsureFreshPass(ctx, standby)
+}
+
+// RotateToNextReady finds the next enabled account with remaining quota and activates it.
+func (p *Pool) RotateToNextReady(ctx context.Context, skipID string) (*guardian.ProxyPass, error) {
+	p.mu.Lock()
+	var candidate *Account
+	for _, a := range p.Accounts {
+		if a.ID != skipID && a.Enabled && a.Status == StatusReady {
+			candidate = a
+			break
+		}
+	}
+	if candidate == nil {
+		p.mu.Unlock()
+		return nil, errors.New("нет доступных резервных аккаунтов со свободной квотой")
+	}
+	for _, a := range p.Accounts {
+		a.Active = (a.ID == candidate.ID)
+	}
+	warmPass := candidate.LastPass
+	isWarm := candidate.HasWarmPass()
+	_ = p.saveLocked()
+	p.mu.Unlock()
+
+	if isWarm {
+		return warmPass, nil
+	}
+	return p.EnsureFreshPass(ctx, candidate)
+}
+
+func (p *Pool) ToggleEnabled(id string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, a := range p.Accounts {
+		if a.ID == id {
+			a.Enabled = !a.Enabled
+			if !a.Enabled && a.Active {
+				a.Active = false
+				for _, other := range p.Accounts {
+					if other.ID != id && other.Enabled {
+						other.Active = true
+						break
+					}
+				}
+			}
+			return p.saveLocked()
+		}
+	}
+	return nil
+}
+
+func (p *Pool) Move(id string, delta int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	idx := -1
+	for i, a := range p.Accounts {
+		if a.ID == id {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return errors.New("аккаунт не найден")
+	}
+	next := idx + delta
+	if next >= 0 && next < len(p.Accounts) {
+		p.Accounts[idx], p.Accounts[next] = p.Accounts[next], p.Accounts[idx]
+	}
+	return p.saveLocked()
+}
+
+func (p *Pool) Remove(id string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i, a := range p.Accounts {
+		if a.ID == id {
+			wasActive := a.Active
+			p.Accounts = append(p.Accounts[:i], p.Accounts[i+1:]...)
+			if wasActive && len(p.Accounts) > 0 {
+				p.Accounts[0].Active = true
+			}
+			return p.saveLocked()
+		}
+	}
+	return nil
+}
+
+func (p *Pool) SetThreshold(percent int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if percent < 50 {
+		percent = 50
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	p.ThresholdPercent = percent
+	return p.saveLocked()
+}
+
+func (p *Pool) ActiveAccount() *Account {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, a := range p.Accounts {
+		if a.Active {
+			return a
+		}
+	}
+	if len(p.Accounts) > 0 {
+		p.Accounts[0].Active = true
+		return p.Accounts[0]
+	}
+	return nil
+}
+
+func (p *Pool) SnapshotAccounts() ([]*Account, int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.recomputeLocked()
+	// Deep-copy: callers JSON-marshal the snapshot while RecordTraffic and
+	// EnsureFreshPass keep mutating the live accounts — sharing pointers
+	// here was a data race.
+	out := make([]*Account, 0, len(p.Accounts))
+	for _, a := range p.Accounts {
+		cp := *a
+		if a.Usage != nil {
+			usage := *a.Usage
+			cp.Usage = &usage
+		}
+		if a.LastPass != nil {
+			lp := *a.LastPass
+			if a.LastPass.Usage != nil {
+				lpUsage := *a.LastPass.Usage
+				lp.Usage = &lpUsage
+			}
+			cp.LastPass = &lp
+		}
+		out = append(out, &cp)
+	}
+	return out, p.ThresholdPercent
+}
