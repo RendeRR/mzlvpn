@@ -9,18 +9,12 @@ no round buttons.
 
 ## Screenshots
 
-<table>
-  <tr>
-    <td align="center"><img src="docs/screenshots/%D0%93%D0%BB%D0%B0%D0%B2%D0%BD%D1%8B%D0%B9%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD.png" width="260" height="584" alt="Home screen: connected, breaker switch ON"></td>
-    <td align="center"><img src="docs/screenshots/%D0%90%D0%BA%D0%BA%D0%B0%D1%83%D0%BD%D1%82%D1%8B.png" width="260" height="584" alt="Accounts: quotas, rotation, the Put-to-work button"></td>
-    <td align="center"><img src="docs/screenshots/%D0%9B%D0%BE%D0%BA%D0%B0%D1%86%D0%B8%D0%B8.png" width="260" height="584" alt="Locations: country list by ping"></td>
-  </tr>
-  <tr>
-    <td align="center">Console</td>
-    <td align="center">Accounts</td>
-    <td align="center">Locations</td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/screenshots/%D0%93%D0%BB%D0%B0%D0%B2%D0%BD%D1%8B%D0%B9%20%D1%8D%D0%BA%D1%80%D0%B0%D0%BD.png" width="260" alt="Home screen: connected, breaker switch ON">
+  <img src="docs/screenshots/%D0%90%D0%BA%D0%BA%D0%B0%D1%83%D0%BD%D1%82%D1%8B.png" width="260" alt="Accounts: quotas, rotation, the Put-to-work button">
+  <img src="docs/screenshots/%D0%9B%D0%BE%D0%BA%D0%B0%D1%86%D0%B8%D0%B8.png" width="260" alt="Locations: country list by ping">
+</p>
+<p align="center">Console · Accounts · Locations</p>
 
 ## Features
 
