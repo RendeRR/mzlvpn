@@ -35,6 +35,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -249,7 +250,32 @@ type diagEvent struct {
 	msg string
 }
 
-const diagLogCap = 24
+const diagLogCap = 48
+
+// diagZone is the zone diagnostic timestamps are rendered in. The Go
+// process on Android runs in UTC unless told otherwise, while the user
+// reads the log against their wall clock — the app passes its UTC
+// offset in at startup (mobile.SetUTCOffset).
+var diagZone = time.Local
+
+// SetDiagZone sets the zone for diagnostic log timestamps from a UTC
+// offset in minutes.
+func SetDiagZone(offsetMinutes int) {
+	diagZone = time.FixedZone("", offsetMinutes*60)
+}
+
+// isClosedConnErr reports whether err means "our own code closed this
+// connection" — a stream or RoundTrip that died because an eviction or
+// a pool flush closed the raw socket under it. Such errors are
+// casualties of recovery, not evidence of a new failure: treating them
+// as fresh evidence (evicting again, flushing the whole pool) turns a
+// single dead session into a self-sustaining eviction storm that
+// massacres every healthy stream in the pool — seen in the field as
+// seconds of total breakage after a wake, with the log full of
+// "use of closed network connection".
+func isClosedConnErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "use of closed network connection")
+}
 
 // logDiag records a tunnel event in the in-memory diagnostic log. The
 // log exists because tunnel failures on a phone are otherwise invisible:
@@ -278,7 +304,7 @@ func (e *Engine) DiagLog() []string {
 	defer e.diagMu.Unlock()
 	out := make([]string, len(e.diag))
 	for i, ev := range e.diag {
-		out[i] = ev.at.Format("15:04:05") + " " + ev.msg
+		out[i] = ev.at.In(diagZone).Format("15:04:05") + " " + ev.msg
 	}
 	return out
 }
@@ -511,6 +537,12 @@ func (e *Engine) relayTCPStream(client net.Conn, cc *http2.ClientConn, authority
 	probe := &streamProbe{r: streamReader}
 	_ = copyZeroAlloc(client, probe, onBytes)
 	if probe.err == nil || cc == nil {
+		return
+	}
+	if isClosedConnErr(probe.err) {
+		// This stream died because recovery closed its session under it.
+		// It says nothing about any session's health — do not evict and
+		// do not log it as an eviction; that feedback loop is the storm.
 		return
 	}
 	if probe.bytes == 0 {
@@ -1024,23 +1056,32 @@ func (e *Engine) openH2ConnectStream(ctx context.Context, targetAuthority string
 // pooled session serves the stream, so callers can blame mid-stream
 // failures on the right session (see relayTCPStream).
 //
-// A transport-level failure is retried once: the first attempt flushes
-// the whole pool (every session shares the dead path), so the retry
-// runs on a guaranteed-fresh session. That turns a network switch from
-// "no internet until a manual VPN restart" into a single slightly slow
-// connection.
+// A genuine transport-level failure flushes the whole pool (every
+// session shares the dead path), so the retry runs on a guaranteed-
+// fresh session; a failure caused by our own recovery closing the
+// session mid-CONNECT only evicts that session. That turns a network
+// switch from "no internet until a manual VPN restart" into a single
+// slightly slow connection — without letting recovery feed on itself.
 func (e *Engine) openH2ConnectStreamCC(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, *http2.ClientConn, error) {
-	rc, wc, cc, err := e.openH2ConnectStreamOnce(ctx, targetAuthority)
-	if err == nil {
-		return rc, wc, cc, nil
+	// Up to three attempts: each transport failure removes at least the
+	// one session it indicted (see openH2ConnectStreamOnce), so a pool
+	// holding several corpses is cleared attempt by attempt instead of
+	// by one pool-wide flush that also kills healthy streams.
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		rc, wc, cc, err := e.openH2ConnectStreamOnce(ctx, targetAuthority)
+		if err == nil {
+			return rc, wc, cc, nil
+		}
+		var streamErr http2.StreamError
+		if errors.As(err, &streamErr) {
+			// Stream-scoped refusal (e.g. REFUSED_STREAM): the session
+			// itself is healthy and the caller must see it as-is.
+			return nil, nil, nil, err
+		}
+		lastErr = err
 	}
-	var streamErr http2.StreamError
-	if errors.As(err, &streamErr) {
-		// Stream-scoped refusal (e.g. REFUSED_STREAM): the session itself
-		// is healthy and the caller must see the refusal as-is.
-		return nil, nil, nil, err
-	}
-	return e.openH2ConnectStreamOnce(ctx, targetAuthority)
+	return nil, nil, nil, lastErr
 }
 
 func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority string) (io.ReadCloser, io.WriteCloser, *http2.ClientConn, error) {
@@ -1079,12 +1120,23 @@ func (e *Engine) openH2ConnectStreamOnce(ctx context.Context, targetAuthority st
 		_ = pw.Close()
 		var streamErr http2.StreamError
 		if !errors.As(err, &streamErr) {
-			// Transport-level failure: every pooled session shares this
-			// path, so one corpse indicts them all. Flush the pool (and
-			// the DoH connection riding it) rather than evicting just
-			// this session — the caller's retry then dials fresh.
-			e.logDiag("connect %s transport error: %v", targetAuthority, err)
-			e.ResetSession()
+			if isClosedConnErr(err) {
+				// Our own eviction/flush closed this session while the
+				// CONNECT was in flight — a casualty of recovery, not a
+				// new failure. Evict just this session (likely already
+				// gone) and let the caller retry; escalating to a pool
+				// flush here is what turned single dead sessions into
+				// eviction storms.
+				e.evictH2Conn(cc)
+			} else {
+				// Genuine transport failure: every pooled session shares
+				// this path, so one corpse indicts them all. Flush the
+				// pool (and the DoH connection riding it) rather than
+				// evicting just this session — the caller's retry then
+				// dials fresh.
+				e.logDiag("connect %s transport error: %v", targetAuthority, err)
+				e.ResetSession()
+			}
 		}
 		return nil, nil, nil, err
 	}

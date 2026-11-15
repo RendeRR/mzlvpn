@@ -527,8 +527,9 @@ func TestDiagLogRecordsAndCaps(t *testing.T) {
 	if len(log) != diagLogCap {
 		t.Fatalf("log has %d entries, want cap %d", len(log), diagLogCap)
 	}
-	if !strings.Contains(log[len(log)-1], "event 28") {
-		t.Fatalf("newest entry = %q, want 'event 28'", log[len(log)-1])
+	wantNewest := "event " + strconv.Itoa(diagLogCap+4)
+	if !strings.Contains(log[len(log)-1], wantNewest) {
+		t.Fatalf("newest entry = %q, want %q", log[len(log)-1], wantNewest)
 	}
 	if !strings.Contains(log[0], "event 5") {
 		t.Fatalf("oldest entry = %q, want 'event 5' (older ones trimmed)", log[0])
@@ -556,6 +557,56 @@ func TestStopClosesDoH(t *testing.T) {
 	e.dohMu.Unlock()
 	if !closed {
 		t.Fatal("Stop must drop the pooled DoH connection and its session")
+	}
+}
+
+// TestRelayIgnoresLocallyClosedConn pins the anti-cascade rule: a
+// stream that died with "use of closed network connection" was killed
+// by our own recovery closing its session. The relay must not treat
+// that as evidence of anything — no eviction, or one recovery massacres
+// every sibling stream and their retries feed the next one.
+func TestRelayIgnoresLocallyClosedConn(t *testing.T) {
+	proxy := startTestProxy(t)
+	e, _ := startTestEngine(t, proxy)
+
+	rc, wc, cc, err := e.openH2ConnectStreamCC(context.Background(), "93.184.216.34:80")
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.mu.RLock()
+	var raw net.Conn
+	for _, entry := range e.h2Pool {
+		if entry.cc == cc {
+			raw = entry.raw
+		}
+	}
+	e.mu.RUnlock()
+	if raw == nil {
+		t.Fatal("serving session not found in pool")
+	}
+	// Recovery closes the session under the live stream.
+	_ = raw.Close()
+
+	clientA, clientB := net.Pipe()
+	go func() { _, _ = io.Copy(io.Discard, clientB) }()
+	done := make(chan struct{})
+	go func() {
+		e.relayTCPStream(clientA, cc, "93.184.216.34:80", rc, wc)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("relay did not finish after the session was closed")
+	}
+	_ = clientA.Close()
+	_ = clientB.Close()
+
+	e.mu.RLock()
+	poolLen := len(e.h2Pool)
+	e.mu.RUnlock()
+	if poolLen != 1 {
+		t.Fatalf("pool has %d sessions, want 1: a locally-closed stream must not evict", poolLen)
 	}
 }
 

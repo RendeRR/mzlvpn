@@ -57,6 +57,13 @@ func SetLanguage(code string) {
 	lang.Set(code)
 }
 
+// SetUTCOffset tells the core the device's current UTC offset in
+// minutes, so tunnel-log timestamps render in the user's wall-clock
+// time instead of the Go process's UTC. Safe to call at any time.
+func SetUTCOffset(minutes int) {
+	tunnel.SetDiagZone(minutes)
+}
+
 // Start initializes the account pool and server list in dataDir.
 // language is the app's active UI language code (see SetLanguage).
 func Start(dataDir string, autoConnect bool, language string) error {
