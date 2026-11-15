@@ -104,9 +104,9 @@ dependencies {
 // fonts at runtime (see PriborFonts in MainActivity.kt).
 val designFontFiles = listOf(
     "RussoOne-Regular.ttf" to "https://raw.githubusercontent.com/google/fonts/main/ofl/russoone/RussoOne-Regular.ttf",
-    "IBMPlexMono-Regular.ttf" to "https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexmono/IBMPlexMono-Regular.ttf",
     "IBMPlexMono-Medium.ttf" to "https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexmono/IBMPlexMono-Medium.ttf",
-    "IBMPlexMono-SemiBold.ttf" to "https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexmono/IBMPlexMono-SemiBold.ttf"
+    "IBMPlexMono-SemiBold.ttf" to "https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexmono/IBMPlexMono-SemiBold.ttf",
+    "IBMPlexMono-Bold.ttf" to "https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexmono/IBMPlexMono-Bold.ttf"
 )
 
 tasks.register("fetchDesignFonts") {

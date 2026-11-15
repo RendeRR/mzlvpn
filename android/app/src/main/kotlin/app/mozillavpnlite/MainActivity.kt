@@ -76,22 +76,22 @@ import kotlin.math.roundToInt
 private val Paper = Color(0xFFF4F1EA)
 private val PaperDeep = Color(0xFFEBE5D8)
 private val Ink = Color(0xFF17130C)
-private val InkSoft = Color(0xFF6F675A)
+private val InkSoft = Color(0xFF554E40)
 private val Signal = Color(0xFFFF4D00)
 private val Alarm = Color(0xFFB3261E)
 
 private object PriborFonts {
     var display: FontFamily = FontFamily.Default
         private set
-    private var monoRegular: FontFamily = FontFamily.Monospace
     private var monoMedium: FontFamily = FontFamily.Monospace
     private var monoSemiBold: FontFamily = FontFamily.Monospace
+    private var monoBold: FontFamily = FontFamily.Monospace
 
     fun init(context: Context) {
         display = load(context, "fonts/RussoOne-Regular.ttf", FontFamily.Default)
-        monoRegular = load(context, "fonts/IBMPlexMono-Regular.ttf", FontFamily.Monospace)
         monoMedium = load(context, "fonts/IBMPlexMono-Medium.ttf", FontFamily.Monospace)
         monoSemiBold = load(context, "fonts/IBMPlexMono-SemiBold.ttf", FontFamily.Monospace)
+        monoBold = load(context, "fonts/IBMPlexMono-Bold.ttf", FontFamily.Monospace)
     }
 
     private fun load(context: Context, path: String, fallback: FontFamily): FontFamily =
@@ -101,10 +101,13 @@ private object PriborFonts {
             fallback
         }
 
+    // Веса подняты на ступень относительно названий: обычный текст рисуется
+    // Medium, средний — SemiBold, акценты — Bold. Regular у Plex Mono на
+    // мелких кеглях читается тонко (замечание Рината по первому скриншоту).
     fun mono(weight: FontWeight): FontFamily = when (weight) {
-        FontWeight.SemiBold, FontWeight.Bold -> monoSemiBold
-        FontWeight.Medium -> monoMedium
-        else -> monoRegular
+        FontWeight.SemiBold, FontWeight.Bold -> monoBold
+        FontWeight.Medium -> monoSemiBold
+        else -> monoMedium
     }
 }
 
@@ -267,7 +270,7 @@ fun MozillaVpnLiteApp() {
                 Text(
                     text = "MZLVPN · LITE · SER. 001",
                     color = Ink,
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     fontFamily = PriborFonts.mono(FontWeight.SemiBold),
                     fontWeight = FontWeight.SemiBold
                 )
@@ -277,7 +280,7 @@ fun MozillaVpnLiteApp() {
                 Text(
                     text = "${activeLocation.code} · ${CoreBridge.formatPing(activeLocation.latencyMs)}",
                     color = Ink,
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     fontFamily = PriborFonts.mono(FontWeight.SemiBold),
                     fontWeight = FontWeight.SemiBold
                 )
@@ -285,7 +288,7 @@ fun MozillaVpnLiteApp() {
                 Text(
                     text = "ВЫКЛЮЧЕНО",
                     color = InkSoft,
-                    fontSize = 13.sp,
+                    fontSize = 14.sp,
                     fontFamily = PriborFonts.mono(FontWeight.Normal)
                 )
             }
@@ -617,7 +620,7 @@ private fun BottomNavTabItem(
         Text(
             text = label,
             color = if (selected) Ink else InkSoft,
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             fontFamily = PriborFonts.mono(if (selected) FontWeight.SemiBold else FontWeight.Normal),
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
             maxLines = 1,
@@ -637,7 +640,7 @@ private fun SectionLabel(text: String) {
         Text(
             text = text,
             color = InkSoft,
-            fontSize = 11.sp,
+            fontSize = 12.sp,
             fontFamily = PriborFonts.mono(FontWeight.SemiBold),
             fontWeight = FontWeight.SemiBold,
             letterSpacing = 2.sp
@@ -661,13 +664,13 @@ private fun SpecRow(label: String, value: String, valueColor: Color = Ink) {
         Text(
             text = label,
             color = InkSoft,
-            fontSize = 12.sp,
+            fontSize = 13.sp,
             fontFamily = PriborFonts.mono(FontWeight.Normal)
         )
         Canvas(
             modifier = Modifier
                 .weight(1f)
-                .height(12.dp)
+                .height(13.dp)
                 .padding(horizontal = 8.dp)
         ) {
             drawLine(
@@ -681,7 +684,7 @@ private fun SpecRow(label: String, value: String, valueColor: Color = Ink) {
         Text(
             text = value,
             color = valueColor,
-            fontSize = 13.sp,
+            fontSize = 14.sp,
             fontFamily = PriborFonts.mono(FontWeight.SemiBold),
             fontWeight = FontWeight.SemiBold
         )
@@ -717,8 +720,11 @@ private fun QuotaDrum(pct: Int, alarm: Boolean) {
 }
 
 /**
- * Рубильник: полоса с ползуном. Выкл — чёрный ползун слева, вкл — оранжевый
- * справа. Движение ступенчатое, без пружин (tween 140 мс).
+ * Рубильник как механизм, а не сегментная кнопка: пластина, в ней канал,
+ * по каналу ходит выступающая рукоять с насечками. Подписи ВЫКЛ/ВКЛ стоят
+ * на пластине по бокам канала и не уезжают под ползун. При ВКЛ канал
+ * заливается сигнальным оранжевым — «сеть под напряжением». Движение
+ * ступенчатое, без пружин (tween 150 мс).
  */
 @Composable
 private fun BreakerSwitch(
@@ -734,63 +740,75 @@ private fun BreakerSwitch(
                 .offset(x = 6.dp, y = 6.dp)
                 .background(Ink)
         )
-        BoxWithConstraints(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(66.dp)
                 .background(Paper)
                 .border(BorderStroke(2.dp, Ink), RectangleShape)
                 .clickable(onClick = onToggle)
+                .padding(horizontal = 14.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(13.dp)
         ) {
-            val half = maxWidth / 2
-            val target = when {
-                isConnecting -> half / 2
-                isOn -> half
-                else -> 0.dp
-            }
-            val blockOffset by animateDpAsState(
-                targetValue = target,
-                animationSpec = tween(durationMillis = 140),
-                label = "breakerBlock"
+            Text(
+                text = "ВЫКЛ",
+                color = if (!isOn && !isConnecting) Ink else InkSoft,
+                fontSize = 16.sp,
+                fontFamily = PriborFonts.display,
+                letterSpacing = 1.sp
             )
-            // Ползун.
-            Box(
+
+            // Канал с рукоятью.
+            BoxWithConstraints(
                 modifier = Modifier
-                    .width(half)
-                    .fillMaxHeight()
-                    .offset(x = blockOffset)
-                    .background(if (isOn) Signal else Ink)
-            )
-            Row(modifier = Modifier.fillMaxSize()) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "ВЫКЛ",
-                        color = if (!isOn && !isConnecting) Paper else Ink,
-                        fontSize = 17.sp,
-                        fontFamily = PriborFonts.display,
-                        letterSpacing = 1.sp
-                    )
+                    .weight(1f)
+                    .height(46.dp)
+                    .background(if (isOn) Signal else PaperDeep)
+                    .border(BorderStroke(2.dp, Ink), RectangleShape)
+            ) {
+                val blockWidth = maxWidth * 0.38f
+                val travel = maxWidth - blockWidth
+                val target = when {
+                    isConnecting -> travel / 2
+                    isOn -> travel
+                    else -> 0.dp
                 }
+                val blockOffset by animateDpAsState(
+                    targetValue = target,
+                    animationSpec = tween(durationMillis = 150),
+                    label = "breakerBlock"
+                )
+                // Рукоять: выше канала на 8 дп, выступает над и под ним.
                 Box(
                     modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight(),
+                        .width(blockWidth)
+                        .height(54.dp)
+                        .align(Alignment.CenterStart)
+                        .offset(x = blockOffset)
+                        .background(Ink)
+                        .border(BorderStroke(2.dp, Ink), RectangleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        text = "ВКЛ",
-                        color = if (isOn) Ink else InkSoft,
-                        fontSize = 17.sp,
-                        fontFamily = PriborFonts.display,
-                        letterSpacing = 1.sp
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        repeat(3) {
+                            Box(
+                                modifier = Modifier
+                                    .width(3.dp)
+                                    .height(26.dp)
+                                    .background(Paper)
+                            )
+                        }
+                    }
                 }
             }
+
+            Text(
+                text = "ВКЛ",
+                color = if (isOn) Ink else InkSoft,
+                fontSize = 16.sp,
+                fontFamily = PriborFonts.display,
+                letterSpacing = 1.sp
+            )
         }
     }
 }
@@ -1147,9 +1165,9 @@ private fun LocationRow(
         Text(
             text = code,
             color = Ink,
-            fontSize = 19.sp,
+            fontSize = 18.sp,
             fontFamily = PriborFonts.display,
-            modifier = Modifier.width(54.dp),
+            modifier = Modifier.width(68.dp),
             maxLines = 1
         )
         Column(
