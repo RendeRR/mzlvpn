@@ -19,7 +19,14 @@ import org.json.JSONObject
 class VpnWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         for (id in ids) {
-            manager.updateAppWidget(id, VpnWidgetViews.build(context))
+            val views = try {
+                VpnWidgetViews.build(context)
+            } catch (_: Throwable) {
+                // Never leave the launcher with nothing: the bare
+                // layout (static texts) is the last-resort frame.
+                RemoteViews(context.packageName, R.layout.widget_toggle)
+            }
+            manager.updateAppWidget(id, views)
         }
     }
 }
@@ -54,13 +61,15 @@ object VpnWidgetViews {
         views.setOnClickPendingIntent(R.id.widget_root, togglePending)
         views.setOnClickPendingIntent(R.id.widget_action, togglePending)
 
-        val ink = context.getColor(R.color.pribor_ink)
-        val signal = context.getColor(R.color.pribor_signal)
         val paper = context.getColor(R.color.pribor_paper)
 
         when {
             running -> {
-                views.setInt(R.id.widget_square, "setBackgroundColor", signal)
+                views.setInt(
+                    R.id.widget_square,
+                    "setBackgroundResource",
+                    R.drawable.widget_square_signal
+                )
                 val (state, detail) = connectedTexts(context)
                 views.setTextViewText(R.id.widget_state, state)
                 views.setTextViewText(R.id.widget_detail, detail)
@@ -76,7 +85,11 @@ object VpnWidgetViews {
                 views.setTextColor(R.id.widget_action, paper)
             }
             starting -> {
-                views.setInt(R.id.widget_square, "setBackgroundColor", signal)
+                views.setInt(
+                    R.id.widget_square,
+                    "setBackgroundResource",
+                    R.drawable.widget_square_signal
+                )
                 views.setTextViewText(
                     R.id.widget_state,
                     context.getString(R.string.widget_state_connecting)
@@ -94,7 +107,11 @@ object VpnWidgetViews {
                 views.setTextColor(R.id.widget_action, paper)
             }
             else -> {
-                views.setInt(R.id.widget_square, "setBackgroundColor", ink)
+                views.setInt(
+                    R.id.widget_square,
+                    "setBackgroundResource",
+                    R.drawable.widget_square_ink
+                )
                 views.setTextViewText(
                     R.id.widget_state,
                     context.getString(R.string.state_off)
