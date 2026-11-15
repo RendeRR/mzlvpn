@@ -19,7 +19,10 @@ android {
 
     externalNativeBuild {
         ndkBuild {
-            path = file("../hev-socks5-tunnel/Android.mk")
+            // Vendored hev-socks5-tunnel (see android/third_party/README.md).
+            // Deliberately NOT ../hev-socks5-tunnel: that path is where the
+            // legacy CI fetch step drops a fresh armanlife clone.
+            path = file("../third_party/hev-socks5-tunnel/Android.mk")
         }
     }
 
