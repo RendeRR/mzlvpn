@@ -222,9 +222,10 @@ func tryMidSessionFailover(p *accounts.Pool, failed *accounts.Account) {
 	recordEvent("down", fmt.Sprintf(lang.T("Аккаунт %s недоступен, переключиться не на что", "Account %s is unavailable and there is no standby to switch to"), failed.Email))
 }
 
-// sweepAccounts re-checks standby accounts whose health state is
-// stale, once when the app starts: failed accounts whose cooldown has
-// expired and ready accounts not checked for over 6 hours. Strictly
+// sweepAccounts re-checks accounts whose health or quota state is
+// stale, once when the app starts: failed accounts whose cooldown
+// has expired and ready accounts holding no warm pass (their quota
+// snapshot is refreshed too). Strictly
 // sequential and quiet — one pass fetch per account — with recoveries
 // journaled. (No manual "check" buttons: the Accounts tab has enough
 // controls already, per the user's design call.)

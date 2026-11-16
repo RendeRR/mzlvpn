@@ -166,6 +166,14 @@ func ParseQuotaHeaders(h http.Header) *QuotaUsage {
 	if h == nil {
 		return nil
 	}
+	// The unlimited flag is independent of the numeric headers:
+	// during Mozilla's unlimited promo the server sends limit and
+	// remaining AND X-Quota-Unlimited: true together. An earlier
+	// version of this parser consulted the flag only when the
+	// numbers were missing, so the flag was silently dropped on
+	// every real response — the app kept showing the 50 GB cap
+	// while Arman VPN, reading the same header, showed unlimited.
+	unlimited := strings.EqualFold(strings.TrimSpace(h.Get("X-Quota-Unlimited")), "true")
 	limit, err1 := strconv.ParseInt(strings.TrimSpace(h.Get("X-Quota-Limit")), 10, 64)
 	rem, err2 := strconv.ParseInt(strings.TrimSpace(h.Get("X-Quota-Remaining")), 10, 64)
 	if err1 == nil && err2 == nil && limit > 0 {
@@ -177,13 +185,13 @@ func ParseQuotaHeaders(h http.Header) *QuotaUsage {
 			resetAt = time.Unix(sec, 0)
 		}
 		return &QuotaUsage{
-			Unlimited:      false,
+			Unlimited:      unlimited,
 			LimitBytes:     limit,
 			RemainingBytes: rem,
 			ResetAt:        resetAt,
 		}
 	}
-	if strings.EqualFold(strings.TrimSpace(h.Get("X-Quota-Unlimited")), "true") {
+	if unlimited {
 		q := DefaultQuotaUsage()
 		q.Unlimited = true
 		return q

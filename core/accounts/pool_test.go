@@ -163,11 +163,15 @@ func TestNeedsCheck(t *testing.T) {
 	}
 	stale := &Account{Status: StatusReady, Enabled: true, LastCheckAt: now.Add(-7 * time.Hour)}
 	if !stale.NeedsCheck(now) {
-		t.Fatal("stale ready standby should need a check")
+		t.Fatal("ready standby without a warm pass should need a check")
 	}
 	activeStale := &Account{Status: StatusReady, Enabled: true, Active: true, LastCheckAt: now.Add(-7 * time.Hour)}
-	if activeStale.NeedsCheck(now) {
-		t.Fatal("active account is maintained by live paths, not the sweep")
+	if !activeStale.NeedsCheck(now) {
+		t.Fatal("active account without a warm pass needs a check too (app opened disconnected)")
+	}
+	warm := &Account{Status: StatusReady, Enabled: true, LastPass: &guardian.ProxyPass{RawToken: "x", ExpiresAt: now.Add(10 * time.Minute)}}
+	if warm.NeedsCheck(now) {
+		t.Fatal("ready account with a warm pass must not be re-checked")
 	}
 }
 

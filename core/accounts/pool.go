@@ -573,18 +573,21 @@ func (p *Pool) ListAccounts() []*Account {
 
 // NeedsCheck reports whether the app-open sweep should re-check this
 // account: a failed account whose cooldown has expired, or a ready
-// standby not checked for over 6 hours. The active account is
-// maintained by the live paths and reauth needs the user, so both are
+// account holding no warm pass — its quota snapshot is stale by
+// definition (passes live ~10 minutes), so opening the app refreshes
+// it, the way Arman VPN shows fresh quota state on open. The active
+// account is included when it has no warm pass (e.g. the app was
+// opened disconnected); reauth accounts need the user and are
 // skipped.
 func (a *Account) NeedsCheck(now time.Time) bool {
-	if !a.Enabled || a.Active {
+	if !a.Enabled {
 		return false
 	}
 	switch a.Status {
 	case StatusNoPass, StatusNotEntitled, StatusQuotaExceeded, StatusUnreachable:
-		return !now.Before(a.CooldownUntil)
+		return !a.Active && !now.Before(a.CooldownUntil)
 	case StatusReady:
-		return now.Sub(a.LastCheckAt) > 6*time.Hour && !a.HasWarmPass()
+		return !a.HasWarmPass()
 	}
 	return false
 }
