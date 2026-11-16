@@ -1,11 +1,6 @@
-node_modules/
 build/
-dist/
-coverage/
 .DS_Store
 *.log
-.env*
-!.env.example
 
 # Design fonts are fetched at build time (fetchDesignFonts in app/build.gradle.kts)
 android/app/src/main/assets/fonts/*.ttf

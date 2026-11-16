@@ -35,7 +35,7 @@ no round buttons.
 - Quota as reported by the server: the app shows the limit and remaining
   quota from the Guardian response, and "unlimited traffic" instead of
   numbers while Mozilla's unlimited promo runs (details in
-  [QUOTA.md](QUOTA.md), in Russian).
+  [QUOTA.md](docs/QUOTA.md), in Russian).
 - English and Russian UI; the language follows the system and is changed
   in the system settings (Settings → Languages → App languages) — there
   is no in-app language switch.
@@ -61,7 +61,7 @@ The app adopts the quota snapshot from the Guardian response as-is:
 limit, remaining quota, reset date and the `X-Quota-Unlimited` flag.
 There is no local traffic counting; while Mozilla's unlimited promo
 runs, the cards show "unlimited traffic" and quota-based rotation does
-not trigger. All facts and decisions are in [QUOTA.md](QUOTA.md)
+not trigger. All facts and decisions are in [QUOTA.md](docs/QUOTA.md)
 (in Russian).
 
 ## Building
@@ -81,10 +81,9 @@ the network is unavailable.
 - `android/` — the app: Kotlin/Compose UI, VpnService, the hev JNI glue.
 - `core/` — the Go core: `fxa`, `guardian`, `accounts`, `tunnel`,
   `mobile`, `serverlist`, `lang` (core message language).
-- `src/`, `server.ts`, `index.html` — a web mock-up of the UI (a
-  prototyping leftover; the product is the Android app).
-- `QUOTA.md` — facts about Mozilla's quota and the counting decisions
-  (in Russian).
+- `docs/` — documentation: `QUOTA.md` (facts about Mozilla's quota and
+  the counting decisions, in Russian), `IMPROVEMENTS.md` (the improvement
+  log, in Russian) and screenshots.
 
 ## Disclaimer
 
