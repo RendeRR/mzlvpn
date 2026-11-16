@@ -88,6 +88,7 @@ func Start(dataDir string, autoConnect bool, language string) error {
 	mu.Unlock()
 
 	loadEvents(dataDir)
+	loadSettings(dataDir)
 	go sweepAccounts()
 
 	// No local traffic counting (removed 2026-11-16 at the user's
@@ -779,6 +780,7 @@ func SetLocation(countryCode string) {
 	loc := currentLocationLocked()
 	mu.Unlock()
 
+	saveSettings()
 	engine.SwitchServer(loc.Endpoint())
 }
 
