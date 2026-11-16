@@ -313,13 +313,26 @@ class MinimalVpnService : VpnService() {
             } else {
                 loc?.optString("name", "Germany")?.ifBlank { "Germany" } ?: "Germany"
             }
-            // «Германия (Munich)»: country, then the city in brackets —
-            // the raw endpoint host (muc139.m1.fastly-masque.net) is
-            // noise in a notification and was removed at the user's
-            // request (2026-11-16). City names come from the server
-            // list in English («Munich (MUC)» → «Munich»).
-            val city = loc?.optString("city", "")?.substringBefore(" (")?.trim().orEmpty()
-            val place = if (city.isBlank()) countryName else "$countryName ($city)"
+            // «Германия (Мюнхен)»: country, then the real city in
+            // brackets — the raw endpoint host is noise in a
+            // notification and was removed at the user's request
+            // (2026-11-16). Remote Settings names every "city" after
+            // its country, so the core maps the city code (MUC) to a
+            // real city name; when the bare city equals the country
+            // (anycast US/CA, city-state Singapore) the brackets are
+            // skipped.
+            val rawCity = if (isRu) {
+                loc?.optString("city_ru", "")?.ifBlank { null } ?: loc?.optString("city", "") ?: ""
+            } else {
+                loc?.optString("city", "") ?: ""
+            }
+            val city = rawCity.substringBefore(" (").trim()
+            val enName = loc?.optString("name", "") ?: ""
+            val place = if (city.isBlank() || city == countryName || city == enName) {
+                countryName
+            } else {
+                "$countryName ($city)"
+            }
 
             var activeEmail = ""
             val accs = root.optJSONArray("accounts")
