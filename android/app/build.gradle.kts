@@ -65,9 +65,14 @@ android {
             val ksFile = file("release.p12")
             if (ksFile.exists()) {
                 storeFile = ksFile
-                storePassword = "android"
-                keyAlias = "mozillavpnlite"
-                keyPassword = "android"
+                // Key rotation (2026-11-16): credentials come from
+                // GitHub Secrets via the workflow env; the legacy
+                // fallbacks keep the old embedded key building until
+                // the secrets and the new workflow land.
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: "android"
+                keyAlias = System.getenv("KEY_ALIAS") ?: "mozillavpnlite"
+                keyPassword = System.getenv("KEY_PASSWORD")
+                    ?: System.getenv("KEYSTORE_PASSWORD") ?: "android"
                 storeType = "PKCS12"
             }
         }
