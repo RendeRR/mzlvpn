@@ -254,6 +254,15 @@ object CoreBridge {
                 val nameEn = o.optString("name", code)
                 val nameRu = o.optString("name_ru", "").ifBlank { nameEn }
                 val localizedName = if (languageCode() == "ru") nameRu else nameEn
+                // City follows the UI language like the country name,
+                // and the airport code in brackets («Munich (MUC)»)
+                // is dropped for display — the user reads it as noise
+                // in the server list (2026-11-16); the Fastly host
+                // next to it still identifies the node.
+                val cityEn = o.optString("city", nameEn)
+                val cityRu = o.optString("city_ru", "").ifBlank { cityEn }
+                val localizedCity = (if (languageCode() == "ru") cityRu else cityEn)
+                    .substringBefore(" (").trim()
                 val ping = o.optLong("ping_ms", 0L).toInt().coerceAtLeast(0)
 
                 locations.add(
@@ -261,7 +270,7 @@ object CoreBridge {
                         code = code,
                         flag = countryFlag(code),
                         name = localizedName,
-                        city = o.optString("city", nameEn),
+                        city = localizedCity,
                         host = o.optString("server_host", "muc139.m1.fastly-masque.net"),
                         port = o.optInt("server_port", 2499),
                         latencyMs = ping
