@@ -18,10 +18,8 @@ no round buttons.
 
 ## Features
 
-- **50 GB free per account.** Mozilla grants every account 50 GB of
-  traffic per month for free — the official Mozilla VPN client requires
-  a paid subscription, while this client simply uses the free quota the
-  server already provides.
+- **50 GB per month per account** — the quota the server issues to
+  every Mozilla account; the app tracks usage locally.
 - Mozilla account sign-in (FxA): password, email confirmation code and
   two-factor verification — right in the app.
 - Multiple accounts with automatic rotation by monthly quota (threshold
