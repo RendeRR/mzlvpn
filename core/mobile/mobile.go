@@ -17,6 +17,7 @@ import (
 
 	"mozillavpnlite/core/accounts"
 	"mozillavpnlite/core/fxa"
+	"mozillavpnlite/core/guardian"
 	"mozillavpnlite/core/lang"
 	"mozillavpnlite/core/serverlist"
 	"mozillavpnlite/core/tunnel"
@@ -26,6 +27,7 @@ var (
 	mu           sync.Mutex
 	refreshMu    sync.Mutex
 	reconnectRun atomic.Bool
+	failoverUsed atomic.Bool // one mid-session failover per connection
 	pool         *accounts.Pool
 	engine       = tunnel.NewEngine()
 	locations    = serverlist.DefaultLocations()
@@ -83,6 +85,9 @@ func Start(dataDir string, autoConnect bool, language string) error {
 	}
 	pool = p
 	mu.Unlock()
+
+	loadEvents(dataDir)
+	go sweepAccounts()
 
 	engine.OnTrafficBytes = func(delta int64) {
 		if p.RecordTraffic(delta) {
@@ -170,10 +175,78 @@ func refreshEngineToken(reason string) {
 	defer cancel()
 	pass, err := p.EnsureFreshPass(ctx, active)
 	if err != nil {
+		// A hard failure of the active account (Guardian refuses it,
+		// sign-in died, no pass issued) gets ONE mid-session failover;
+		// soft network failures are absorbed by the tunnel's 401
+		// wait-and-retry as before and never rotate on their own.
+		switch accounts.HealthClass(err) {
+		case accounts.HealthReauth, accounts.HealthNoPass, accounts.HealthNotEntitled, accounts.HealthTokenInvalid:
+			tryMidSessionFailover(p, active)
+		}
 		return
 	}
 	if pass != nil && pass.RawToken != "" {
+		if winner := p.ActiveAccount(); winner != nil && winner.ID != active.ID {
+			recordEvent("switch", switchText(active, winner))
+		}
 		engine.UpdateToken(pass.RawToken)
+	}
+}
+
+// tryMidSessionFailover moves a live tunnel off a hard-failed active
+// account onto the next ready one, once per connection. The engine
+// token is hot-swapped; sessions keep running on the new account.
+func tryMidSessionFailover(p *accounts.Pool, failed *accounts.Account) {
+	if !failoverUsed.CompareAndSwap(false, true) {
+		return
+	}
+	for _, cand := range p.FailoverCandidates(failed.ID) {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		pass, err := p.EnsureFreshPass(ctx, cand)
+		cancel()
+		if err != nil || pass == nil || pass.RawToken == "" {
+			continue
+		}
+		winner := cand
+		if w := p.ActiveAccount(); w != nil && w.ID != cand.ID {
+			winner = w
+		} else {
+			p.SetActive(cand.ID)
+		}
+		engine.UpdateToken(pass.RawToken)
+		recordEvent("switch", switchText(failed, winner))
+		return
+	}
+	recordEvent("down", fmt.Sprintf(lang.T("Аккаунт %s недоступен, переключиться не на что", "Account %s is unavailable and there is no standby to switch to"), failed.Email))
+}
+
+// sweepAccounts re-checks standby accounts whose health state is
+// stale, once when the app starts: failed accounts whose cooldown has
+// expired and ready accounts not checked for over 6 hours. Strictly
+// sequential and quiet — one pass fetch per account — with recoveries
+// journaled. (No manual "check" buttons: the Accounts tab has enough
+// controls already, per the user's design call.)
+func sweepAccounts() {
+	time.Sleep(10 * time.Second)
+	mu.Lock()
+	p := pool
+	mu.Unlock()
+	if p == nil {
+		return
+	}
+	now := time.Now()
+	for _, acc := range p.ListAccounts() {
+		if !acc.NeedsCheck(now) {
+			continue
+		}
+		wasDown := acc.Status != accounts.StatusReady
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		err := p.CheckAccount(ctx, acc)
+		cancel()
+		if err == nil && wasDown {
+			recordEvent("recovered", fmt.Sprintf(lang.T("Аккаунт снова работает: %s", "Account is back: %s"), acc.Email))
+		}
+		time.Sleep(2 * time.Second)
 	}
 }
 
@@ -235,7 +308,23 @@ func rotateActiveAccount(p *accounts.Pool) {
 	defer cancel()
 	if pass, err := p.RotateToNextReady(ctx, active.ID); err == nil && pass != nil {
 		engine.UpdateToken(pass.RawToken)
+		if winner := p.ActiveAccount(); winner != nil && winner.ID != active.ID {
+			recordEvent("switch", switchText(active, winner))
+		}
 	}
+}
+
+// switchText formats a failover journal entry: where the tunnel moved
+// and why. The reason comes from the failed account's health record.
+func switchText(from, to *accounts.Account) string {
+	reason := from.Reason
+	if reason == "" {
+		reason = from.LastError
+	}
+	if reason != "" {
+		return fmt.Sprintf(lang.T("Переключено на %s: %s недоступен (%s)", "Switched to %s: %s is unavailable (%s)"), to.Email, from.Email, reason)
+	}
+	return fmt.Sprintf(lang.T("Переключено на %s: %s недоступен", "Switched to %s: %s is unavailable"), to.Email, from.Email)
 }
 
 // Running reports whether the core has been initialized.
@@ -274,16 +363,14 @@ func Connect() error {
 		mu.Lock()
 		connected = true
 		mu.Unlock()
+		failoverUsed.Store(false)
 		go probeTunnel()
 		go refreshEngineToken("connect")
 		startTokenRefreshLoop()
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	pass, err := p.EnsureFreshPass(ctx, active)
+	pass, err := connectPass(p, active)
 	if err != nil {
 		return err
 	}
@@ -299,6 +386,52 @@ func Connect() error {
 	go probeTunnel()
 	startTokenRefreshLoop()
 	return nil
+}
+
+// connectPass obtains a pass for a Connect attempt: the active
+// account first, then each failover candidate in pool order. A winner
+// other than the previously active account becomes the active one and
+// the switch is journaled — a connection that silently lands on a
+// different account than the user picked is a bug, not a feature.
+// Health outcomes are recorded inside the pool either way, so a failed
+// active account finally shows its real state on its card.
+func connectPass(p *accounts.Pool, active *accounts.Account) (*guardian.ProxyPass, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	pass, err := p.EnsureFreshPass(ctx, active)
+	cancel()
+	if err == nil && pass != nil && pass.RawToken != "" {
+		if winner := p.ActiveAccount(); winner != nil && winner.ID != active.ID {
+			recordEvent("switch", switchText(active, winner))
+		}
+		failoverUsed.Store(false)
+		return pass, nil
+	}
+	lastErr := err
+	for _, cand := range p.FailoverCandidates(active.ID) {
+		cctx, ccancel := context.WithTimeout(context.Background(), 15*time.Second)
+		cpass, cerr := p.EnsureFreshPass(cctx, cand)
+		ccancel()
+		if cerr != nil || cpass == nil || cpass.RawToken == "" {
+			if cerr != nil {
+				lastErr = cerr
+			}
+			continue
+		}
+		winner := cand
+		if w := p.ActiveAccount(); w != nil && w.ID != cand.ID {
+			winner = w // rotated once more inside; flags already set
+		} else {
+			p.SetActive(cand.ID)
+		}
+		recordEvent("switch", switchText(active, winner))
+		failoverUsed.Store(false)
+		return cpass, nil
+	}
+	recordEvent("down", lang.T("Все аккаунты недоступны", "All accounts are unavailable"))
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, errors.New(lang.T("ни один аккаунт не выдал пропуск", "no account could issue a pass"))
 }
 
 // probeTunnel exercises the data path right after Connect: one probe
@@ -352,6 +485,7 @@ func Reconnect() {
 // Disconnect stops the local SOCKS5 tunnel.
 func Disconnect() {
 	stopTokenRefreshLoop()
+	failoverUsed.Store(false)
 	engine.Stop()
 	mu.Lock()
 	connected = false
@@ -376,7 +510,18 @@ func SwitchAccount(accountID string) error {
 	defer cancel()
 
 	pass, err := p.Activate(ctx, accountID)
+	if err == nil && (pass == nil || pass.RawToken == "") {
+		err = guardian.ErrEmptyToken
+	}
 	if err != nil {
+		email := accountID
+		for _, a := range p.ListAccounts() {
+			if a.ID == accountID {
+				email = a.Email
+				break
+			}
+		}
+		recordEvent("fail", fmt.Sprintf(lang.T("Не удалось переключиться на %s: %s", "Could not switch to %s: %s"), email, err.Error()))
 		return err
 	}
 	engine.UpdateToken(pass.RawToken)
@@ -675,6 +820,8 @@ func StatusJSON() string {
 		"threshold_percent": threshold,
 		"accounts":          accs,
 		"locations":         locsCopy,
+		"events":            eventsSnapshot(),
+		"last_event":        lastEvent(),
 	}
 	data, _ := json.Marshal(payload)
 	return string(data)

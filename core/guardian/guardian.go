@@ -28,6 +28,7 @@ var (
 	ErrTokenInvalid  = lang.Bilingual("OAuth токен отклонён Guardian (HTTP 401)", "OAuth token rejected by Guardian (HTTP 401)")
 	ErrNotEntitled   = lang.Bilingual("аккаунт ещё не активирован в Guardian (HTTP 403)", "account is not activated in Guardian yet (HTTP 403)")
 	ErrQuotaExceeded = lang.Bilingual("месячная квота исчерпана (HTTP 429)", "monthly quota exhausted (HTTP 429)")
+	ErrEmptyToken    = lang.Bilingual("пустой токен ProxyPass в ответе Guardian", "empty ProxyPass token in the Guardian response")
 )
 
 type QuotaUsage struct {
@@ -118,8 +119,11 @@ func fetchTokenOnce(ctx context.Context, accessToken string) (*ProxyPass, error)
 	var tokenResp struct {
 		Token string `json:"token"`
 	}
-	if err := json.Unmarshal(body, &tokenResp); err != nil || tokenResp.Token == "" {
-		return nil, errors.New(lang.T("пустой токен ProxyPass в ответе Guardian", "empty ProxyPass token in the Guardian response"))
+	if err := json.Unmarshal(body, &tokenResp); err != nil {
+		return nil, err
+	}
+	if tokenResp.Token == "" {
+		return nil, ErrEmptyToken
 	}
 
 	exp := parseJWTExpiry(tokenResp.Token)

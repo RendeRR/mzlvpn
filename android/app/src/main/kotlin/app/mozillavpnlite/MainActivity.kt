@@ -1227,6 +1227,7 @@ private fun LocationRow(
 /** Плашка аккаунта для главного экрана и вкладки аккаунтов (общая часть). */
 @Composable
 private fun AccountPlateHeader(acc: AccountItem, isActive: Boolean) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -1255,17 +1256,46 @@ private fun AccountPlateHeader(acc: AccountItem, isActive: Boolean) {
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f)
         )
+        // A health verdict outranks the ACTIVE/READY labels: an active
+        // but dead account used to show a clean «АКТИВЕН» while every
+        // connection attempt died on it within a second.
+        val healthRes = when (acc.status) {
+            "reauth_required" -> R.string.acc_status_reauth
+            "no_pass" -> R.string.acc_status_no_pass
+            "not_entitled" -> R.string.acc_status_not_entitled
+            "quota_exceeded" -> R.string.acc_status_exhausted
+            "unreachable" -> R.string.acc_status_unreachable
+            else -> null
+        }
         Text(
             text = when {
+                healthRes != null -> stringResource(healthRes)
                 isActive -> stringResource(R.string.acc_status_active)
                 acc.exhausted -> stringResource(R.string.acc_status_exhausted)
                 else -> stringResource(R.string.acc_status_ready)
             },
-            color = if (isActive) Ink else InkSoft,
+            color = when {
+                healthRes != null && acc.status != "unreachable" -> Alarm
+                isActive -> Ink
+                else -> InkSoft
+            },
             fontSize = 11.sp,
             fontFamily = PriborFonts.mono(FontWeight.SemiBold),
             fontWeight = FontWeight.SemiBold
         )
+    }
+    val reasonText = acc.reason.ifBlank { acc.lastError }
+    if (reasonText.isNotBlank()) {
+        val checkedAt = CoreBridge.formatTimeOfDay(acc.lastCheckAtMs)
+        Text(
+            text = if (checkedAt.isNotBlank()) "$reasonText · $checkedAt" else reasonText,
+            color = InkSoft,
+            fontSize = 11.sp,
+            fontFamily = PriborFonts.mono(FontWeight.Normal),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
     }
 }
 
@@ -1325,7 +1355,14 @@ private fun HomeTabScreen(
                         text = when {
                             isConnecting -> stringResource(R.string.tunnel_connecting)
                             isConnected -> stringResource(R.string.tunnel_active)
-                            else -> stringResource(R.string.tunnel_inactive)
+                            // The status line under the title doubles as
+                            // the failover notice: a fresh account event
+                            // (switch / all-down) explains why the tunnel
+                            // is off instead of a bare «не активен».
+                            else -> snap.lastEvent
+                                ?.takeIf { it.atMs > 0L && System.currentTimeMillis() - it.atMs < 60 * 60 * 1000L }
+                                ?.text
+                                ?: stringResource(R.string.tunnel_inactive)
                         },
                         color = InkSoft,
                         fontSize = 12.sp,
@@ -1853,6 +1890,38 @@ private fun AccountsTabScreen(
                             .clickable { onRemoveAccount(idx) }
                             .padding(horizontal = 6.dp, vertical = 6.dp)
                     )
+                }
+            }
+        }
+
+        // Журнал событий аккаунтов: переключения, отказы, восстановления.
+        if (snap.events.isNotEmpty()) {
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Paper)
+                        .border(BorderStroke(1.dp, Ink), RectangleShape)
+                        .padding(15.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = stringResource(R.string.events_title),
+                        color = Ink,
+                        fontSize = 12.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                        fontWeight = FontWeight.SemiBold,
+                        letterSpacing = 1.5.sp
+                    )
+                    snap.events.takeLast(10).reversed().forEach { ev ->
+                        Text(
+                            text = "${CoreBridge.formatTimeOfDay(ev.atMs)} · ${ev.text}",
+                            color = InkSoft,
+                            fontSize = 11.sp,
+                            fontFamily = PriborFonts.mono(FontWeight.Normal),
+                            lineHeight = 15.sp
+                        )
+                    }
                 }
             }
         }

@@ -14,7 +14,17 @@ data class AccountItem(
     val enabled: Boolean,
     val exhausted: Boolean,
     val usedBytes: Long,
-    val limitBytes: Long
+    val limitBytes: Long,
+    val status: String = "ready",
+    val reason: String = "",
+    val lastError: String = "",
+    val lastCheckAtMs: Long = 0L
+)
+
+data class EventItem(
+    val atMs: Long,
+    val kind: String,
+    val text: String
 )
 
 data class LocationItem(
@@ -41,7 +51,9 @@ data class CoreSnapshot(
     val activeAccount: Int = 0,
     val thresholdPct: Int = 95,
     val accounts: List<AccountItem> = emptyList(),
-    val locations: List<LocationItem> = emptyList()
+    val locations: List<LocationItem> = emptyList(),
+    val events: List<EventItem> = emptyList(),
+    val lastEvent: EventItem? = null
 )
 
 object CoreBridge {
@@ -104,6 +116,68 @@ object CoreBridge {
         return if (latencyMs > 0) str(R.string.ping_fmt, latencyMs) else "…"
     }
 
+    /** Go marshals time.Time as RFC3339; returns epoch millis or 0. */
+    fun parseRfc3339Ms(s: String): Long {
+        if (s.isBlank()) return 0L
+        return try {
+            java.time.Instant.parse(s).toEpochMilli()
+        } catch (_: Throwable) {
+            0L
+        }
+    }
+
+    fun formatTimeOfDay(ms: Long): String {
+        if (ms <= 0L) return ""
+        return try {
+            java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+                .format(java.util.Date(ms))
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
+    @Volatile
+    private var lastNotifiedEventMs: Long = -1L
+
+    /**
+     * Posts a system notification for a NEW consequential account event
+     * (auto-switch, total failure, failed manual switch) the first time
+     * a snapshot shows it. Pre-existing journal history on app start is
+     * adopted silently.
+     */
+    private fun notifyEventIfNew(ev: EventItem?) {
+        if (ev == null) return
+        if (lastNotifiedEventMs < 0L) {
+            lastNotifiedEventMs = ev.atMs
+            return
+        }
+        if (ev.atMs <= lastNotifiedEventMs) return
+        lastNotifiedEventMs = ev.atMs
+        if (ev.kind != "switch" && ev.kind != "down" && ev.kind != "fail") return
+        val ctx = appCtx ?: return
+        try {
+            val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                nm.createNotificationChannel(
+                    android.app.NotificationChannel(
+                        "account_events",
+                        ctx.getString(R.string.notif_channel_events),
+                        android.app.NotificationManager.IMPORTANCE_DEFAULT
+                    )
+                )
+            }
+            val notif = androidx.core.app.NotificationCompat.Builder(ctx, "account_events")
+                .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setContentTitle(ctx.getString(R.string.app_name))
+                .setContentText(ev.text)
+                .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(ev.text))
+                .setAutoCancel(true)
+                .build()
+            nm.notify(4200 + (ev.atMs % 997L).toInt(), notif)
+        } catch (_: Throwable) {
+        }
+    }
+
     private fun parseActionOutcome(rawJson: String): ActionOutcome {
         return try {
             val obj = JSONObject(rawJson)
@@ -160,9 +234,13 @@ object CoreBridge {
                         position = o.optInt("position", i + 1),
                         active = isActive,
                         enabled = o.optBoolean("enabled", true),
-                        exhausted = statusStr == "reserved" || rem <= 0L,
+                        exhausted = statusStr == "reserved" || statusStr == "quota_exceeded" || rem <= 0L,
                         usedBytes = used,
-                        limitBytes = limit
+                        limitBytes = limit,
+                        status = statusStr,
+                        reason = o.optString("reason", ""),
+                        lastError = o.optString("last_error", ""),
+                        lastCheckAtMs = parseRfc3339Ms(o.optString("last_check_at", ""))
                     )
                 )
             }
@@ -203,6 +281,30 @@ object CoreBridge {
                 }
             }
 
+            val eventItems = mutableListOf<EventItem>()
+            val evArr = root.optJSONArray("events")
+            if (evArr != null) {
+                for (i in 0 until evArr.length()) {
+                    val e = evArr.optJSONObject(i) ?: continue
+                    eventItems.add(
+                        EventItem(
+                            atMs = parseRfc3339Ms(e.optString("at", "")),
+                            kind = e.optString("kind", ""),
+                            text = e.optString("text", "")
+                        )
+                    )
+                }
+            }
+            val lastEvObj = root.optJSONObject("last_event")
+            val lastEv = lastEvObj?.let {
+                EventItem(
+                    atMs = parseRfc3339Ms(it.optString("at", "")),
+                    kind = it.optString("kind", ""),
+                    text = it.optString("text", "")
+                )
+            }
+            notifyEventIfNew(lastEv)
+
             CoreSnapshot(
                 state = if (isConnected) "connected" else "disconnected",
                 selectedLocation = selLoc,
@@ -210,7 +312,9 @@ object CoreBridge {
                 activeAccount = activeIdx,
                 thresholdPct = root.optInt("threshold_percent", 95),
                 accounts = accounts,
-                locations = locations
+                locations = locations,
+                events = eventItems,
+                lastEvent = lastEv
             )
         } catch (_: Throwable) {
             CoreSnapshot()

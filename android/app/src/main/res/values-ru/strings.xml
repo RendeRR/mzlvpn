@@ -37,6 +37,12 @@
     <string name="acc_status_active">АКТИВЕН</string>
     <string name="acc_status_exhausted">КВОТА ИСЧЕРПАНА</string>
     <string name="acc_status_ready">ГОТОВ</string>
+    <string name="acc_status_reauth">НУЖЕН ВХОД</string>
+    <string name="acc_status_no_pass">НЕ ВЫДАЁТ ПРОПУСК</string>
+    <string name="acc_status_not_entitled">НЕ АКТИВИРОВАН</string>
+    <string name="acc_status_unreachable">НЕДОСТУПЕН</string>
+    <string name="events_title">СОБЫТИЯ</string>
+    <string name="notif_channel_events">События аккаунтов</string>
     <string name="acc_profile_active">АКТИВНЫЙ ПРОФИЛЬ</string>
     <string name="acc_profile_reserve">В РЕЗЕРВЕ ДО СБРОСА</string>
     <string name="acc_profile_queue">В ОЧЕРЕДИ РОТАЦИИ</string>

@@ -37,6 +37,12 @@
     <string name="acc_status_active">ACTIVE</string>
     <string name="acc_status_exhausted">QUOTA EXHAUSTED</string>
     <string name="acc_status_ready">READY</string>
+    <string name="acc_status_reauth">SIGN-IN REQUIRED</string>
+    <string name="acc_status_no_pass">NO PASS ISSUED</string>
+    <string name="acc_status_not_entitled">NOT ACTIVATED</string>
+    <string name="acc_status_unreachable">UNREACHABLE</string>
+    <string name="events_title">EVENTS</string>
+    <string name="notif_channel_events">Account events</string>
     <string name="acc_profile_active">ACTIVE PROFILE</string>
     <string name="acc_profile_reserve">IN RESERVE UNTIL RESET</string>
     <string name="acc_profile_queue">IN ROTATION QUEUE</string>
