@@ -1355,18 +1355,7 @@ private fun HomeTabScreen(
                         text = when {
                             isConnecting -> stringResource(R.string.tunnel_connecting)
                             isConnected -> stringResource(R.string.tunnel_active)
-                            // The status line under the title doubles as
-                            // the failover notice: a fresh account event
-                            // (switch / all-down) explains why the tunnel
-                            // is off instead of a bare «не активен».
-                            else -> snap.lastEvent
-                                ?.takeIf {
-                                    it.atMs > 0L &&
-                                        System.currentTimeMillis() - it.atMs < 60 * 60 * 1000L &&
-                                        it.atMs >= CoreBridge.sessionStartMs() - 30_000L
-                                }
-                                ?.text
-                                ?: stringResource(R.string.tunnel_inactive)
+                            else -> stringResource(R.string.tunnel_inactive)
                         },
                         color = InkSoft,
                         fontSize = 12.sp,
@@ -1534,6 +1523,71 @@ private fun AccountsTabScreen(
     onRemoveAccount: (Int) -> Unit,
     onThresholdChange: (Int) -> Unit
 ) {
+    // Удаление аккаунта — только после подтверждения: действие
+    // необратимо, а кнопка стоит в одном ряду с остальными.
+    var pendingDeleteIdx by remember { mutableStateOf<Int?>(null) }
+    if (pendingDeleteIdx != null) {
+        val delIdx = pendingDeleteIdx!!
+        val delEmail = snap.accounts.getOrNull(delIdx)?.email ?: ""
+        androidx.compose.ui.window.Dialog(onDismissRequest = { pendingDeleteIdx = null }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Paper)
+                    .border(BorderStroke(2.dp, Ink), RectangleShape)
+                    .padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.delete_confirm_title),
+                    color = Ink,
+                    fontSize = 20.sp,
+                    fontFamily = PriborFonts.display
+                )
+                Text(
+                    text = stringResource(R.string.delete_confirm_text, delEmail),
+                    color = InkSoft,
+                    fontSize = 13.sp,
+                    fontFamily = PriborFonts.mono(FontWeight.Normal),
+                    lineHeight = 18.sp
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .border(BorderStroke(1.dp, Ink), RectangleShape)
+                            .clickable { pendingDeleteIdx = null }
+                            .padding(horizontal = 14.dp, vertical = 9.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.btn_cancel),
+                            color = Ink,
+                            fontSize = 12.sp,
+                            fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .background(Alarm)
+                            .clickable {
+                                onRemoveAccount(delIdx)
+                                pendingDeleteIdx = null
+                            }
+                            .padding(horizontal = 14.dp, vertical = 9.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.btn_delete),
+                            color = Paper,
+                            fontSize = 12.sp,
+                            fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -1898,41 +1952,9 @@ private fun AccountsTabScreen(
                         fontFamily = PriborFonts.mono(FontWeight.SemiBold),
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
-                            .clickable { onRemoveAccount(idx) }
+                            .clickable { pendingDeleteIdx = idx }
                             .padding(horizontal = 6.dp, vertical = 6.dp)
                     )
-                }
-            }
-        }
-
-        // Журнал событий аккаунтов: переключения, отказы, восстановления.
-        if (snap.events.isNotEmpty()) {
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Paper)
-                        .border(BorderStroke(1.dp, Ink), RectangleShape)
-                        .padding(15.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.events_title),
-                        color = Ink,
-                        fontSize = 12.sp,
-                        fontFamily = PriborFonts.mono(FontWeight.SemiBold),
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 1.5.sp
-                    )
-                    snap.events.takeLast(10).reversed().forEach { ev ->
-                        Text(
-                            text = "${CoreBridge.formatTimeOfDay(ev.atMs)} · ${ev.text}",
-                            color = InkSoft,
-                            fontSize = 11.sp,
-                            fontFamily = PriborFonts.mono(FontWeight.Normal),
-                            lineHeight = 15.sp
-                        )
-                    }
                 }
             }
         }

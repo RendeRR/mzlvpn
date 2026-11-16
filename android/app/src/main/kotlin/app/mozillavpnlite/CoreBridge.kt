@@ -52,7 +52,6 @@ data class CoreSnapshot(
     val thresholdPct: Int = 95,
     val accounts: List<AccountItem> = emptyList(),
     val locations: List<LocationItem> = emptyList(),
-    val events: List<EventItem> = emptyList(),
     val lastEvent: EventItem? = null
 )
 
@@ -201,14 +200,7 @@ object CoreBridge {
         fetchSnapshotSync()
     }
 
-    @Volatile
-    private var sessionStartMs: Long = 0L
-
-    /** When this process took its first snapshot; events older than the session must not pose as the current state on the main screen. */
-    fun sessionStartMs(): Long = sessionStartMs
-
     private fun fetchSnapshotSync(): CoreSnapshot {
-        if (sessionStartMs == 0L) sessionStartMs = System.currentTimeMillis()
         return try {
             val raw = mobile.Mobile.statusJSON()
             val root = JSONObject(raw)
@@ -288,20 +280,6 @@ object CoreBridge {
                 }
             }
 
-            val eventItems = mutableListOf<EventItem>()
-            val evArr = root.optJSONArray("events")
-            if (evArr != null) {
-                for (i in 0 until evArr.length()) {
-                    val e = evArr.optJSONObject(i) ?: continue
-                    eventItems.add(
-                        EventItem(
-                            atMs = parseRfc3339Ms(e.optString("at", "")),
-                            kind = e.optString("kind", ""),
-                            text = e.optString("text", "")
-                        )
-                    )
-                }
-            }
             val lastEvObj = root.optJSONObject("last_event")
             val lastEv = lastEvObj?.let {
                 EventItem(
@@ -320,7 +298,6 @@ object CoreBridge {
                 thresholdPct = root.optInt("threshold_percent", 95),
                 accounts = accounts,
                 locations = locations,
-                events = eventItems,
                 lastEvent = lastEv
             )
         } catch (_: Throwable) {

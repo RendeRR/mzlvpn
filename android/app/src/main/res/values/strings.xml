@@ -41,8 +41,10 @@
     <string name="acc_status_no_pass">NO PASS ISSUED</string>
     <string name="acc_status_not_entitled">NOT ACTIVATED</string>
     <string name="acc_status_unreachable">UNREACHABLE</string>
-    <string name="events_title">EVENTS</string>
     <string name="notif_channel_events">Account events</string>
+    <string name="delete_confirm_title">DELETE ACCOUNT?</string>
+    <string name="delete_confirm_text">The profile %1$s will be removed from the pool. This cannot be undone.</string>
+    <string name="btn_cancel">CANCEL</string>
     <string name="acc_profile_active">ACTIVE PROFILE</string>
     <string name="acc_profile_reserve">IN RESERVE UNTIL RESET</string>
     <string name="acc_profile_queue">IN ROTATION QUEUE</string>

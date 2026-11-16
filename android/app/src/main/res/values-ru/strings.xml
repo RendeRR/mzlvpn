@@ -41,8 +41,10 @@
     <string name="acc_status_no_pass">НЕ ВЫДАЁТ ПРОПУСК</string>
     <string name="acc_status_not_entitled">НЕ АКТИВИРОВАН</string>
     <string name="acc_status_unreachable">НЕДОСТУПЕН</string>
-    <string name="events_title">СОБЫТИЯ</string>
     <string name="notif_channel_events">События аккаунтов</string>
+    <string name="delete_confirm_title">УДАЛИТЬ АККАУНТ?</string>
+    <string name="delete_confirm_text">Профиль %1$s будет удалён из пула. Действие нельзя отменить.</string>
+    <string name="btn_cancel">ОТМЕНА</string>
     <string name="acc_profile_active">АКТИВНЫЙ ПРОФИЛЬ</string>
     <string name="acc_profile_reserve">В РЕЗЕРВЕ ДО СБРОСА</string>
     <string name="acc_profile_queue">В ОЧЕРЕДИ РОТАЦИИ</string>
