@@ -1393,12 +1393,18 @@ private fun HomeTabScreen(
             }
         }
 
-        // 2. Аккаунты — компактные паспорта с барабаном квоты.
-        if (snap.accounts.isNotEmpty()) {
+        // 2. Аккаунты — компактные паспорта с барабаном квоты. На главной
+        // только включённые (в ротации) плюс текущий активный: аккаунт,
+        // выключенный на вкладке «Аккаунты», не должен на главной
+        // числиться «готовым» (просьба пользователя, 2026-11-16).
+        // Индексы остаются пуловыми — клик выбирает по настоящему индексу.
+        val shownAccounts = snap.accounts.withIndex()
+            .filter { it.value.enabled || it.index == snap.activeAccount }
+        if (shownAccounts.isNotEmpty()) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionLabel(stringResource(R.string.home_accounts, snap.accounts.size))
-                    snap.accounts.forEachIndexed { idx, acc ->
+                    SectionLabel(stringResource(R.string.home_accounts, shownAccounts.size))
+                    shownAccounts.forEach { (idx, acc) ->
                         val isActive = idx == snap.activeAccount
                         val pct = ((acc.usedBytes.toDouble() / acc.limitBytes.coerceAtLeast(1L).toDouble()) * 100.0)
                             .roundToInt()

@@ -23,7 +23,7 @@
     <string name="tab_servers">СЕРВЕРЫ · %1$d</string>
 
     <!-- Home -->
-    <string name="home_accounts">АККАУНТЫ · %1$d</string>
+    <string name="home_accounts">АКТИВНЫЕ АККАУНТЫ · %1$d</string>
     <string name="home_locations_fast">ЛОКАЦИИ · БЫСТРЫЕ</string>
     <string name="quota_used_line">ИЗРАСХОДОВАНО: %1$s ИЗ %2$s</string>
     <string name="quota_threshold_line">%1$d%% · ПОРОГ %2$d%%</string>
