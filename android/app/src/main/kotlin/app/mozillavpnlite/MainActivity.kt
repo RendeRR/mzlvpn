@@ -227,7 +227,17 @@ fun MozillaVpnLiteApp() {
     val activeLocation: LocationItem? = remember(snap) {
         val locs = snap.locations
         when (snap.selectedLocation) {
-            "recommended" -> locs.firstOrNull { it.code.equals("DE", ignoreCase = true) } ?: locs.firstOrNull()
+            // Recommended = Mozilla's anycast endpoint (host is a stable
+            // Mozilla constant; the core resolves the actual connection).
+            "recommended" -> LocationItem(
+                code = "REC",
+                flag = "",
+                name = stringResource(R.string.mode_recommended),
+                city = "Anycast",
+                host = "p.m1.fastly-masque.net",
+                port = 2499,
+                latencyMs = 0
+            )
             "fastest" -> locs.minByOrNull { if (it.latencyMs > 0) it.latencyMs else 999 }
             else -> locs.firstOrNull { it.code.equals(snap.selectedLocation, ignoreCase = true) } ?: locs.firstOrNull()
         }
@@ -299,7 +309,8 @@ fun MozillaVpnLiteApp() {
 
             if (snap.state == "connected" && activeLocation != null) {
                 Text(
-                    text = "${activeLocation.code} · ${CoreBridge.formatPing(activeLocation.latencyMs)}",
+                    text = if (snap.selectedLocation == "recommended") "REC · Anycast"
+                        else "${activeLocation.code} · ${CoreBridge.formatPing(activeLocation.latencyMs)}",
                     color = Ink,
                     fontSize = 14.sp,
                     fontFamily = PriborFonts.mono(FontWeight.SemiBold),
@@ -1369,7 +1380,11 @@ private fun HomeTabScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         SpecRow(stringResource(R.string.spec_location), "${activeLocation.name.uppercase()} · ${activeLocation.code}")
                         SpecRow(stringResource(R.string.spec_server), "${activeLocation.host}:${activeLocation.port}")
-                        SpecRow(stringResource(R.string.spec_ping), CoreBridge.formatPing(activeLocation.latencyMs))
+                        SpecRow(
+                            stringResource(R.string.spec_ping),
+                            if (snap.selectedLocation == "recommended") "Anycast"
+                            else CoreBridge.formatPing(activeLocation.latencyMs)
+                        )
                         SpecRow(
                             stringResource(R.string.spec_protocol),
                             if (snap.protocol == "h3") "HTTP/3 MASQUE" else "HTTP/2 CONNECT"
@@ -1475,8 +1490,7 @@ private fun HomeTabScreen(
                                 .height(1.dp)
                                 .background(Ink)
                         )
-                        val selected = snap.selectedLocation.equals(loc.code, ignoreCase = true) ||
-                            (snap.selectedLocation == "recommended" && loc.code.equals("DE", ignoreCase = true))
+                        val selected = snap.selectedLocation.equals(loc.code, ignoreCase = true)
                         LocationRow(
                             code = loc.code,
                             title = loc.name,

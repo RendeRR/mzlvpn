@@ -32,6 +32,7 @@ var (
 	engine       = tunnel.NewEngine()
 	locations    = serverlist.DefaultLocations()
 	selectedCode = "DE"
+	recLocation  = serverlist.DefaultRecommended()
 	// Default is HTTP/2 CONNECT: HTTP/3 MASQUE (QUIC/UDP) is heavily
 	// unreliable on many networks and often does not work in practice.
 	// The tunnel engine always speaks HTTP/2 CONNECT; the protocol value
@@ -111,7 +112,7 @@ func Start(dataDir string, autoConnect bool, language string) error {
 
 		// 2. Fetch full Remote Settings server list and measure real pings for all 32 locations
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		list, fetchErr := serverlist.Fetch(ctx)
+		list, anycast, fetchErr := serverlist.FetchAll(ctx)
 		cancel()
 		if fetchErr == nil && len(list) > 0 {
 			pingCtx, pingCancel := context.WithTimeout(context.Background(), 12*time.Second)
@@ -130,6 +131,7 @@ func Start(dataDir string, autoConnect bool, language string) error {
 			pingCancel()
 			mu.Lock()
 			locations = measured
+			recLocation = anycast
 			mu.Unlock()
 		}
 	}()
@@ -847,7 +849,12 @@ func StatusJSON() string {
 }
 
 func currentLocationLocked() serverlist.Location {
-	if selectedCode == "" || strings.EqualFold(selectedCode, "REC") || strings.EqualFold(selectedCode, "fastest") {
+	if strings.EqualFold(selectedCode, "REC") {
+		// "Recommended" is Mozilla's real anycast endpoint: Fastly's
+		// routing chooses the egress, not our ping table.
+		return recLocation
+	}
+	if selectedCode == "" || strings.EqualFold(selectedCode, "fastest") {
 		if len(locations) > 0 {
 			return locations[0]
 		}

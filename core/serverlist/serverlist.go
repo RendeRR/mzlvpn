@@ -135,6 +135,24 @@ func DefaultLocations() []Location {
 	}
 }
 
+// DefaultRecommended returns Mozilla's anycast entry point — the REC
+// record in Remote Settings. It is a single host whose egress point
+// Fastly's routing chooses; it has no country or city and is kept out
+// of the country list on purpose.
+func DefaultRecommended() Location {
+	return Location{
+		Code:       "REC",
+		Name:       "Recommended",
+		NameRu:     "Рекомендуемый",
+		City:       "Anycast (REC)",
+		CityRu:     "Anycast (REC)",
+		ServerHost: "p.m1.fastly-masque.net",
+		ServerPort: 2499,
+		Locked:     false,
+		PingMS:     0,
+	}
+}
+
 type rsRecord struct {
 	Code   string `json:"code"`
 	Name   string `json:"name"`
@@ -151,7 +169,17 @@ type rsRecord struct {
 }
 
 // Fetch retrieves all non-quarantined Mozilla Fastly proxy locations with PingMS = 0 (unmeasured).
+// Fetch returns the country list only; the REC anycast entry is
+// available separately via FetchAll.
 func Fetch(ctx context.Context) ([]Location, error) {
+	list, _, err := FetchAll(ctx)
+	return list, err
+}
+
+// FetchAll fetches the Remote Settings server list and returns the
+// country locations plus the REC anycast location (the fallback
+// DefaultRecommended when the record carries no usable server).
+func FetchAll(ctx context.Context) ([]Location, Location, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, RemoteSettingsURL, nil)
 	if err != nil {
 		return nil, err
@@ -160,7 +188,7 @@ func Fetch(ctx context.Context) ([]Location, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, DefaultRecommended(), err
 	}
 	defer resp.Body.Close()
 
@@ -170,21 +198,46 @@ func Fetch(ctx context.Context) ([]Location, error) {
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
 	if err != nil {
-		return nil, err
+		return nil, DefaultRecommended(), err
 	}
 
 	var envelope struct {
 		Data []rsRecord `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return nil, err
+		return nil, DefaultRecommended(), err
 	}
 
 	var out []Location
+	anycast := DefaultRecommended()
 	seen := make(map[string]bool)
 	for _, rec := range envelope.Data {
 		code := strings.ToUpper(strings.TrimSpace(rec.Code))
-		if code == "" || code == "REC" || seen[code] {
+		if code == "REC" {
+			// The anycast entry: one host, Fastly routing picks the
+			// egress. Not a country — kept out of the list.
+			for _, city := range rec.Cities {
+				taken := false
+				for _, srv := range city.Servers {
+					if srv.Quarantined || srv.Hostname == "" {
+						continue
+					}
+					port := srv.Port
+					if port <= 0 {
+						port = 2499
+					}
+					anycast.ServerHost = srv.Hostname
+					anycast.ServerPort = port
+					taken = true
+					break
+				}
+				if taken {
+					break
+				}
+			}
+			continue
+		}
+		if code == "" || seen[code] {
 			continue
 		}
 		for _, city := range rec.Cities {
@@ -225,7 +278,7 @@ func Fetch(ctx context.Context) ([]Location, error) {
 	}
 
 	sortFastestFirst(out)
-	return out, nil
+	return out, anycast, nil
 }
 
 func sortFastestFirst(locs []Location) {
