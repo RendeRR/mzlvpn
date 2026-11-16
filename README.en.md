@@ -32,8 +32,10 @@ no round buttons.
 - 32 locations, with a "fastest" pick by real on-device ping.
 - Two transports: **HTTP/2 CONNECT** (default) and HTTP/3 MASQUE.
   HTTP/3 (QUIC/UDP) is unreliable on many networks, hence the HTTP/2 default.
-- Honest local traffic accounting per account — the server never reports
-  real usage (details in [QUOTA.md](QUOTA.md), in Russian).
+- Quota as reported by the server: the app shows the limit and remaining
+  quota from the Guardian response, and "unlimited traffic" instead of
+  numbers while Mozilla's unlimited promo runs (details in
+  [QUOTA.md](QUOTA.md), in Russian).
 - English and Russian UI; the language follows the system and is changed
   in the system settings (Settings → Languages → App languages) — there
   is no in-app language switch.
@@ -55,11 +57,12 @@ no round buttons.
 
 ## Quota
 
-When issuing a token, the server always reports the remaining quota as
-the full limit, and the proxy sends no quota headers at all. So the app
-counts usage itself, merges server values with the local accounting, and
-rolls the period over on the `X-Quota-Reset` date. All facts and
-decisions are in [QUOTA.md](QUOTA.md) (in Russian).
+The app adopts the quota snapshot from the Guardian response as-is:
+limit, remaining quota, reset date and the `X-Quota-Unlimited` flag.
+There is no local traffic counting; while Mozilla's unlimited promo
+runs, the cards show "unlimited traffic" and quota-based rotation does
+not trigger. All facts and decisions are in [QUOTA.md](QUOTA.md)
+(in Russian).
 
 ## Building
 
