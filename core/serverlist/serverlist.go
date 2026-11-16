@@ -182,7 +182,7 @@ func Fetch(ctx context.Context) ([]Location, error) {
 func FetchAll(ctx context.Context) ([]Location, Location, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, RemoteSettingsURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, DefaultRecommended(), err
 	}
 	fxa.ApplyFirefoxHeaders(req)
 
@@ -193,7 +193,7 @@ func FetchAll(ctx context.Context) ([]Location, Location, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("serverlist HTTP %d", resp.StatusCode)
+		return nil, DefaultRecommended(), fmt.Errorf("serverlist HTTP %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))

@@ -224,6 +224,7 @@ fun MozillaVpnLiteApp() {
         }
     }
 
+    val recommendedName = stringResource(R.string.mode_recommended)
     val activeLocation: LocationItem? = remember(snap) {
         val locs = snap.locations
         when (snap.selectedLocation) {
@@ -232,7 +233,7 @@ fun MozillaVpnLiteApp() {
             "recommended" -> LocationItem(
                 code = "REC",
                 flag = "",
-                name = stringResource(R.string.mode_recommended),
+                name = recommendedName,
                 city = "Anycast",
                 host = "p.m1.fastly-masque.net",
                 port = 2499,
