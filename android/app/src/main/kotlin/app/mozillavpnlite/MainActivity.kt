@@ -2304,6 +2304,15 @@ private fun FxaWebViewDialog(
                                 fun onFxaLogin(email: String, sessionToken: String) {
                                     if (sessionToken.length >= 32) {
                                         post {
+                                            // Token captured — the login
+                                            // WebView's cookies and storage
+                                            // are no longer needed; wipe
+                                            // them so nothing from the
+                                            // session lingers in the shared
+                                            // CookieManager.
+                                            CookieManager.getInstance().removeAllCookies(null)
+                                            CookieManager.getInstance().flush()
+                                            android.webkit.WebStorage.getInstance().deleteAllData()
                                             onSessionCaptured(email, sessionToken)
                                         }
                                     }
@@ -2391,20 +2400,42 @@ private fun FxaWebViewDialog(
                         """.trimIndent()
 
                         webViewClient = object : WebViewClient() {
+                            // The WebChannel hook (and with it the
+                            // MozillaVpnBridge) exists only for the FxA
+                            // page itself: inject only there, and keep
+                            // in-WebView navigation inside Mozilla
+                            // domains (hardening, 2026-11-16).
+                            private fun isFxaPage(url: String?): Boolean =
+                                url != null &&
+                                    android.net.Uri.parse(url).host == "accounts.firefox.com"
+
+                            private fun isMozillaHost(host: String?): Boolean {
+                                if (host == null) return true // about:blank, data:
+                                return host == "firefox.com" || host == "mozilla.com" ||
+                                    host == "mozilla.org" ||
+                                    host.endsWith(".firefox.com") ||
+                                    host.endsWith(".mozilla.com") ||
+                                    host.endsWith(".mozilla.org")
+                            }
+
                             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                                 super.onPageStarted(view, url, favicon)
-                                view?.evaluateJavascript(injectScript, null)
+                                if (isFxaPage(url)) {
+                                    view?.evaluateJavascript(injectScript, null)
+                                }
                             }
 
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
-                                view?.evaluateJavascript(injectScript, null)
+                                if (isFxaPage(url)) {
+                                    view?.evaluateJavascript(injectScript, null)
+                                }
                             }
 
                             override fun shouldOverrideUrlLoading(
                                 view: WebView?,
                                 request: WebResourceRequest?
-                            ): Boolean = false
+                            ): Boolean = !isMozillaHost(request?.url?.host)
                         }
 
                         loadUrl(fxaUrl)

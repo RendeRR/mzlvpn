@@ -31,9 +31,12 @@
              removed at the user's request, 2026-11-16: no «VPN on/off»
              entry in the icon menu. res/xml/shortcuts.xml remains in
              the tree unreferenced — the push route cannot delete.) -->
+        <!-- Not exported: only our own widget's PendingIntent (same
+             uid) may fire the toggle — other apps must not be able to
+             switch the user's VPN on or off (hardening, 2026-11-16). -->
         <activity
             android:name=".VpnToggleActivity"
-            android:exported="true"
+            android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleInstance"
             android:noHistory="true"

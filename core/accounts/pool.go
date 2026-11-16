@@ -83,8 +83,31 @@ func LoadOrCreatePool(dataDir string) (*Pool, error) {
 		ThresholdPercent: 95,
 		Accounts:         []*Account{},
 	}
-	if data, err := os.ReadFile(fp); err == nil {
-		_ = json.Unmarshal(data, p)
+	// Load the main file, falling back to the .bak copy saveLocked
+	// keeps. A corrupt pool must NOT silently become an empty one:
+	// the next save would cement the loss of every account, so when
+	// a pool file exists but neither copy parses, fail loudly.
+	tryLoad := func(path string) bool {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return false
+		}
+		fresh := &Pool{ThresholdPercent: 95, Accounts: []*Account{}}
+		if json.Unmarshal(data, fresh) != nil {
+			return false
+		}
+		p.Accounts = fresh.Accounts
+		p.ThresholdPercent = fresh.ThresholdPercent
+		return true
+	}
+	if !tryLoad(fp) && !tryLoad(fp+".bak") {
+		if _, err := os.Stat(fp); err == nil {
+			return nil, errors.New("accounts pool file is corrupt and no valid backup exists")
+		}
+		if _, err := os.Stat(fp + ".bak"); err == nil {
+			return nil, errors.New("accounts pool backup is corrupt")
+		}
+		// Neither file exists: a fresh pool.
 	}
 	if p.ThresholdPercent < 50 || p.ThresholdPercent > 100 {
 		p.ThresholdPercent = 95
@@ -99,7 +122,31 @@ func (p *Pool) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(p.filePath, data, 0600)
+	// Atomic replace: write a temp file in the same directory, fsync,
+	// then rename over the pool file, keeping the previous good file
+	// as .bak. A crash mid-write can no longer truncate the only copy
+	// of the pool; LoadOrCreatePool falls back to .bak if the main
+	// file is ever unreadable.
+	tmp := p.filePath + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if _, err := os.Stat(p.filePath); err == nil {
+		_ = os.Rename(p.filePath, p.filePath+".bak")
+	}
+	return os.Rename(tmp, p.filePath)
 }
 
 func (p *Pool) recomputeLocked() {

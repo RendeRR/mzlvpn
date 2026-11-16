@@ -2,7 +2,10 @@ package accounts
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -233,5 +236,76 @@ func TestRecordCheckReauthLeavesRotation(t *testing.T) {
 	p.recordCheckLocked(acc, HealthReauth, fxa.ErrReauthRequired)
 	if acc.Status != StatusReauthRequired || acc.Enabled {
 		t.Fatalf("reauth verdict: status=%q enabled=%v", acc.Status, acc.Enabled)
+	}
+}
+
+// Persistence hardening (2026-11-16): a corrupt pool file must fall
+// back to the .bak copy, never silently become an empty pool; with
+// no valid copy anywhere, loading must fail loudly.
+func TestLoadFallsBackToBackup(t *testing.T) {
+	dir := t.TempDir()
+	fp := filepath.Join(dir, "accounts_pool.json")
+	if err := os.WriteFile(fp, []byte("{corrupt"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fp+".bak", []byte(`{"threshold_percent": 90, "accounts": []}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := LoadOrCreatePool(dir)
+	if err != nil {
+		t.Fatalf("load with valid backup: %v", err)
+	}
+	if p.ThresholdPercent != 90 {
+		t.Fatalf("threshold = %d, want 90 (from backup)", p.ThresholdPercent)
+	}
+}
+
+func TestLoadCorruptWithoutBackupFails(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "accounts_pool.json"), []byte("{corrupt"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadOrCreatePool(dir); err == nil {
+		t.Fatal("corrupt pool without backup must return an error, not an empty pool")
+	}
+}
+
+func TestSaveKeepsBackupAndValidMain(t *testing.T) {
+	dir := t.TempDir()
+	p, err := LoadOrCreatePool(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	save := func() {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		if err := p.saveLocked(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save()
+	fp := filepath.Join(dir, "accounts_pool.json")
+	if _, err := os.Stat(fp + ".bak"); !os.IsNotExist(err) {
+		t.Fatal(".bak must not exist after the very first save")
+	}
+	p.ThresholdPercent = 90
+	save()
+	bak, err := os.ReadFile(fp + ".bak")
+	if err != nil {
+		t.Fatalf("second save must keep a backup: %v", err)
+	}
+	var probe Pool
+	if err := json.Unmarshal(bak, &probe); err != nil {
+		t.Fatalf("backup is not valid JSON: %v", err)
+	}
+	if probe.ThresholdPercent != 95 {
+		t.Fatalf("backup threshold = %d, want the previous 95", probe.ThresholdPercent)
+	}
+	p2, err := LoadOrCreatePool(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p2.ThresholdPercent != 90 {
+		t.Fatalf("reloaded threshold = %d, want 90", p2.ThresholdPercent)
 	}
 }
