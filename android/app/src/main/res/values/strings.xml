@@ -49,6 +49,7 @@
     <string name="acc_profile_reserve">IN RESERVE UNTIL RESET</string>
     <string name="acc_profile_queue">IN ROTATION QUEUE</string>
     <string name="acc_profile_out">OUT OF ROTATION</string>
+    <string name="acc_profile_off">DISABLED</string>
     <string name="btn_to_work">PUT TO WORK</string>
     <string name="btn_in_rotation">IN ROTATION</string>
     <string name="btn_acc_off">OFF</string>

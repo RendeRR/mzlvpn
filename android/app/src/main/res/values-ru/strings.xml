@@ -49,6 +49,7 @@
     <string name="acc_profile_reserve">В РЕЗЕРВЕ ДО СБРОСА</string>
     <string name="acc_profile_queue">В ОЧЕРЕДИ РОТАЦИИ</string>
     <string name="acc_profile_out">ВНЕ РОТАЦИИ</string>
+    <string name="acc_profile_off">ОТКЛЮЧЁН</string>
     <string name="btn_to_work">В РАБОТУ</string>
     <string name="btn_in_rotation">В РОТАЦИИ</string>
     <string name="btn_acc_off">ОТКЛЮЧЁН</string>

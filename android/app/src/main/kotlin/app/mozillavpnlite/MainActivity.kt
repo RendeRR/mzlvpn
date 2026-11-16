@@ -1845,6 +1845,7 @@ private fun AccountsTabScreen(
                         text = when {
                             acc.status == "reauth_required" -> stringResource(R.string.acc_profile_out)
                             isActive -> stringResource(R.string.acc_profile_active)
+                            !acc.enabled -> stringResource(R.string.acc_profile_off)
                             acc.exhausted -> stringResource(R.string.acc_profile_reserve)
                             else -> stringResource(R.string.acc_profile_queue)
                         },

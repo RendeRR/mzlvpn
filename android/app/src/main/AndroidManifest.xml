@@ -24,13 +24,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <meta-data
-                android:name="android.app.shortcuts"
-                android:resource="@xml/shortcuts" />
         </activity>
 
-        <!-- Invisible toggle used by the home-screen widget and the
-             launcher long-press shortcut. -->
+        <!-- Invisible toggle used by the home-screen widget. (The
+             launcher long-press shortcut that also pointed here was
+             removed at the user's request, 2026-11-16: no «VPN on/off»
+             entry in the icon menu. res/xml/shortcuts.xml remains in
+             the tree unreferenced — the push route cannot delete.) -->
         <activity
             android:name=".VpnToggleActivity"
             android:exported="true"
