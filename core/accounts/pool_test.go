@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"mozillavpnlite/core/fxa"
 	"mozillavpnlite/core/guardian"
 )
 
@@ -85,6 +86,7 @@ func TestHealthClassMapping(t *testing.T) {
 	}{
 		{nil, HealthOK},
 		{genericErr("network down"), HealthUnreachable},
+		{fxa.ErrReauthRequired, HealthReauth},
 		{guardian.ErrQuotaExceeded, HealthQuota},
 		{guardian.ErrEmptyToken, HealthNoPass},
 		{guardian.ErrNotEntitled, HealthNotEntitled},

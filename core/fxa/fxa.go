@@ -554,7 +554,14 @@ func RefreshAccessToken(ctx context.Context, refreshToken string) (*OAuthTokens,
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+	// Any 4xx on a refresh grant is FxA refusing THIS token or client
+	// state (400 invalid_grant, 401/403, 406 for a token it will not
+	// honour) — deterministic, not weather: the remedy is a fresh
+	// sign-in. Field case 2026-11-16: one account got a bare HTTP 406
+	// on every refresh while its siblings refreshed fine, and the
+	// generic error bucket mislabelled it "temporarily unavailable".
+	// 429 (rate limit) and 5xx stay generic (soft/transient).
+	if resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
 		return nil, ErrReauthRequired
 	}
 	if resp.StatusCode != http.StatusOK {

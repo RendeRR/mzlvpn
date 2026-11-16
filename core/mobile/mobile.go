@@ -208,7 +208,9 @@ func tryMidSessionFailover(p *accounts.Pool, failed *accounts.Account) {
 			continue
 		}
 		winner := cand
-		if w := p.ActiveAccount(); w != nil && w.ID != cand.ID {
+		// Same reference-point rule as connectPass: compare against
+		// the failed account, not the candidate.
+		if w := p.ActiveAccount(); w != nil && w.ID != failed.ID {
 			winner = w
 		} else {
 			p.SetActive(cand.ID)
@@ -418,7 +420,15 @@ func connectPass(p *accounts.Pool, active *accounts.Account) (*guardian.ProxyPas
 			continue
 		}
 		winner := cand
-		if w := p.ActiveAccount(); w != nil && w.ID != cand.ID {
+		// The reference point is the ORIGINAL active account, not the
+		// candidate: flags count as "already set by an internal
+		// rotation" only when ActiveAccount moved AWAY from it.
+		// Comparing against the candidate misfires — the flags still
+		// point at the failed account, SetActive is skipped, and the
+		// tunnel then runs on the candidate's pass while the pool (and
+		// the UI, the notification and the traffic accounting) keep
+		// naming the dead account as active. Field-found 2026-11-16.
+		if w := p.ActiveAccount(); w != nil && w.ID != active.ID {
 			winner = w // rotated once more inside; flags already set
 		} else {
 			p.SetActive(cand.ID)
