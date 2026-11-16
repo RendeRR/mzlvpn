@@ -20,9 +20,12 @@ import (
 )
 
 const (
-	Endpoint                 = "https://vpn.mozilla.org"
 	DefaultMonthlyQuotaBytes = int64(5) * 1024 * 1024 * 1024 // 5 GB (5,368,709,120 bytes)
 )
+
+// Endpoint is a var (not a const) so tests can point the client at
+// a local httptest server.
+var Endpoint = "https://vpn.mozilla.org"
 
 var (
 	ErrTokenInvalid  = lang.Bilingual("OAuth токен отклонён Guardian (HTTP 401)", "OAuth token rejected by Guardian (HTTP 401)")

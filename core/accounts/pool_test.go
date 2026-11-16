@@ -2,10 +2,14 @@ package accounts
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -278,5 +282,47 @@ func TestSaveKeepsBackupAndValidMain(t *testing.T) {
 	}
 	if p2.ThresholdPercent != 90 {
 		t.Fatalf("reloaded threshold = %d, want 90", p2.ThresholdPercent)
+	}
+}
+
+// Регрессия полевой находки 2026-11-16: obtainPass обязан принимать
+// безлимитный снимок квоты. Страж «!Unlimited» времён локального
+// подсчёта молча сохранял старую ограниченную квоту навсегда.
+func TestObtainPassAdoptsUnlimited(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Quota-Limit", "53687091200")
+		w.Header().Set("X-Quota-Remaining", "53687091200")
+		w.Header().Set("X-Quota-Unlimited", "true")
+		exp := time.Now().Add(10 * time.Minute).Unix()
+		payload := base64.RawURLEncoding.EncodeToString([]byte(`{"exp":` + strconv.FormatInt(exp, 10) + `}`))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"token":"x.` + payload + `.y"}`))
+	}))
+	defer srv.Close()
+	old := guardian.Endpoint
+	guardian.Endpoint = srv.URL
+	defer func() { guardian.Endpoint = old }()
+
+	p, err := LoadOrCreatePool(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	acc := &Account{
+		ID: "t1", Email: "t@example", Status: StatusReady, Enabled: true,
+		Usage: usage(50*gb, 20*gb, time.Now()),
+	}
+	acc.Tokens.AccessToken = "at"
+	acc.Tokens.ExpiresAt = time.Now().Add(time.Hour)
+	p.Accounts = []*Account{acc}
+
+	pass, err := p.obtainPass(context.Background(), acc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pass == nil || pass.RawToken == "" {
+		t.Fatal("no pass returned")
+	}
+	if acc.Usage == nil || !acc.Usage.Unlimited {
+		t.Fatalf("unlimited snapshot not adopted: %+v", acc.Usage)
 	}
 }

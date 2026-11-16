@@ -475,7 +475,14 @@ func (p *Pool) obtainPass(ctx context.Context, acc *Account) (*guardian.ProxyPas
 		// Never overwrite a good cached pass with an empty one: on
 		// HTTP 429 Guardian returns a usage-only ProxyPass with no token.
 		acc.LastPass = pass
-		if pass.Usage != nil && !pass.Usage.Unlimited && pass.Usage.LimitBytes > 0 {
+		if pass.Usage != nil {
+			// Adopt the snapshot as-is, unlimited included. An
+			// earlier guard here refused unlimited snapshots (a
+			// leftover from the local-counting era, when the merge
+			// protected the local count from the server's grants) —
+			// it silently kept the capped usage forever and was the
+			// reason build 190 still showed «0 МБ / 50 ГБ» in the
+			// field after the parser was fixed.
 			adoptUsageLocked(acc, pass.Usage)
 		} else if acc.Usage == nil || acc.Usage.LimitBytes <= 0 {
 			acc.Usage = guardian.DefaultQuotaUsage()
