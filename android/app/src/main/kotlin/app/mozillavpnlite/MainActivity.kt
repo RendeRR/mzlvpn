@@ -1360,7 +1360,11 @@ private fun HomeTabScreen(
                             // (switch / all-down) explains why the tunnel
                             // is off instead of a bare «не активен».
                             else -> snap.lastEvent
-                                ?.takeIf { it.atMs > 0L && System.currentTimeMillis() - it.atMs < 60 * 60 * 1000L }
+                                ?.takeIf {
+                                    it.atMs > 0L &&
+                                        System.currentTimeMillis() - it.atMs < 60 * 60 * 1000L &&
+                                        it.atMs >= CoreBridge.sessionStartMs() - 30_000L
+                                }
                                 ?.text
                                 ?: stringResource(R.string.tunnel_inactive)
                         },
@@ -1784,7 +1788,12 @@ private fun AccountsTabScreen(
                         AccountPlateHeader(acc = acc, isActive = isActive)
                     }
                     Text(
-                        text = if (isActive) stringResource(R.string.acc_profile_active) else if (acc.exhausted) stringResource(R.string.acc_profile_reserve) else stringResource(R.string.acc_profile_queue),
+                        text = when {
+                            acc.status == "reauth_required" -> stringResource(R.string.acc_profile_out)
+                            isActive -> stringResource(R.string.acc_profile_active)
+                            acc.exhausted -> stringResource(R.string.acc_profile_reserve)
+                            else -> stringResource(R.string.acc_profile_queue)
+                        },
                         color = InkSoft,
                         fontSize = 11.sp,
                         fontFamily = PriborFonts.mono(FontWeight.Normal),
@@ -1846,7 +1855,7 @@ private fun AccountsTabScreen(
                                 fontSize = 14.sp
                             )
                         }
-                        if (!isActive) {
+                        if (!isActive && acc.status != "reauth_required") {
                             Box(
                                 modifier = Modifier
                                     .background(Ink)
@@ -1863,20 +1872,22 @@ private fun AccountsTabScreen(
                                 )
                             }
                         }
-                        Box(
-                            modifier = Modifier
-                                .background(if (acc.enabled) Ink else Paper)
-                                .border(BorderStroke(1.dp, Ink), RectangleShape)
-                                .clickable { onToggleAccountEnabled(idx) }
-                                .padding(horizontal = 11.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = if (acc.enabled) stringResource(R.string.btn_in_rotation) else stringResource(R.string.btn_acc_off),
-                                color = if (acc.enabled) Paper else InkSoft,
-                                fontSize = 11.sp,
-                                fontFamily = PriborFonts.mono(FontWeight.SemiBold),
-                                fontWeight = FontWeight.SemiBold
-                            )
+                        if (acc.status != "reauth_required") {
+                            Box(
+                                modifier = Modifier
+                                    .background(if (acc.enabled) Ink else Paper)
+                                    .border(BorderStroke(1.dp, Ink), RectangleShape)
+                                    .clickable { onToggleAccountEnabled(idx) }
+                                    .padding(horizontal = 11.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = if (acc.enabled) stringResource(R.string.btn_in_rotation) else stringResource(R.string.btn_acc_off),
+                                    color = if (acc.enabled) Paper else InkSoft,
+                                    fontSize = 11.sp,
+                                    fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
 

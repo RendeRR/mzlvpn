@@ -201,7 +201,14 @@ object CoreBridge {
         fetchSnapshotSync()
     }
 
+    @Volatile
+    private var sessionStartMs: Long = 0L
+
+    /** When this process took its first snapshot; events older than the session must not pose as the current state on the main screen. */
+    fun sessionStartMs(): Long = sessionStartMs
+
     private fun fetchSnapshotSync(): CoreSnapshot {
+        if (sessionStartMs == 0L) sessionStartMs = System.currentTimeMillis()
         return try {
             val raw = mobile.Mobile.statusJSON()
             val root = JSONObject(raw)

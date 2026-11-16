@@ -286,7 +286,14 @@ func (p *Pool) AddWithSessionToken(ctx context.Context, email, sessionTokenHex s
 	return acc, nil
 }
 
-// Activate immediately makes the given account ID active.
+// Activate makes the given account ID active and returns its pass.
+// A reauth-required account is refused outright: it is lost without a
+// fresh sign-in, and flagging it active would make the UI name a dead
+// account as the connection's account. A cold account is fetched
+// FIRST and the Active flags flip only on success — flag-first left
+// every failed «В РАБОТУ» with a dead account shown as active. The
+// warm path keeps the instant flag-first behaviour (its pass is
+// already proven) with a background refresh as before.
 func (p *Pool) Activate(ctx context.Context, id string) (*guardian.ProxyPass, error) {
 	p.mu.Lock()
 	var target *Account
@@ -300,25 +307,46 @@ func (p *Pool) Activate(ctx context.Context, id string) (*guardian.ProxyPass, er
 		p.mu.Unlock()
 		return nil, errors.New(lang.T("аккаунт не найден", "account not found"))
 	}
+	reauth := target.Status == StatusReauthRequired
+	warmPass := target.LastPass
+	isWarm := target.HasWarmPass()
+	p.mu.Unlock()
+
+	if reauth {
+		return nil, fxa.ErrReauthRequired
+	}
+	if !isWarm {
+		// obtainPass, not EnsureFreshPass: an explicit user pick is
+		// honoured as-is — no quota rotation away from the chosen
+		// account. Health is recorded inside either way.
+		pass, err := p.obtainPass(ctx, target)
+		if err != nil {
+			return nil, err
+		}
+		p.mu.Lock()
+		for _, a := range p.Accounts {
+			a.Active = (a.ID == id)
+		}
+		target.Enabled = true
+		_ = p.saveLocked()
+		p.mu.Unlock()
+		return pass, nil
+	}
+
+	p.mu.Lock()
 	for _, a := range p.Accounts {
 		a.Active = (a.ID == id)
 	}
 	target.Enabled = true
-	warmPass := target.LastPass
-	isWarm := target.HasWarmPass()
 	_ = p.saveLocked()
 	p.mu.Unlock()
 
-	if isWarm {
-		go func(acc *Account) {
-			bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			_, _ = p.EnsureFreshPass(bgCtx, acc)
-		}(target)
-		return warmPass, nil
-	}
-
-	return p.EnsureFreshPass(ctx, target)
+	go func(acc *Account) {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, _ = p.EnsureFreshPass(bgCtx, acc)
+	}(target)
+	return warmPass, nil
 }
 
 // Health classes for pass-check outcomes. Hard classes condemn the
@@ -394,12 +422,17 @@ func (p *Pool) recordCheckLocked(acc *Account, class string, err error) {
 	case HealthReauth:
 		acc.Status = StatusReauthRequired
 		acc.Reason = lang.T("Требуется повторный вход", "Sign-in required")
+		// Out of rotation until a fresh sign-in: rotation candidates
+		// already skip non-ready statuses, and Enabled=false makes
+		// the card stop claiming «в ротации» for a lost account.
+		acc.Enabled = false
 	case HealthTokenInvalid:
 		// obtainPass already forced one token refresh + retry before
 		// this verdict: the token chain is dead, only a fresh sign-in
 		// heals it, so the user-facing state is the same as reauth.
 		acc.Status = StatusReauthRequired
 		acc.Reason = lang.T("Guardian отклонил токен — нужен повторный вход", "Guardian rejected the token — sign in again")
+		acc.Enabled = false
 	case HealthQuota:
 		acc.Status = StatusQuotaExceeded
 		acc.Reason = lang.T("Месячная квота исчерпана", "Monthly quota exhausted")

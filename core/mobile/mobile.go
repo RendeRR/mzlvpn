@@ -398,17 +398,25 @@ func Connect() error {
 // Health outcomes are recorded inside the pool either way, so a failed
 // active account finally shows its real state on its card.
 func connectPass(p *accounts.Pool, active *accounts.Account) (*guardian.ProxyPass, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	pass, err := p.EnsureFreshPass(ctx, active)
-	cancel()
-	if err == nil && pass != nil && pass.RawToken != "" {
-		if winner := p.ActiveAccount(); winner != nil && winner.ID != active.ID {
-			recordEvent("switch", switchText(active, winner))
+	var lastErr error
+	if active.Status == accounts.StatusReauthRequired {
+		// Already condemned: a refresh round-trip would only repeat
+		// the verdict and cost a second on every connect. Straight
+		// to the candidates; the account revives via a fresh sign-in.
+		lastErr = fxa.ErrReauthRequired
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		pass, err := p.EnsureFreshPass(ctx, active)
+		cancel()
+		if err == nil && pass != nil && pass.RawToken != "" {
+			if winner := p.ActiveAccount(); winner != nil && winner.ID != active.ID {
+				recordEvent("switch", switchText(active, winner))
+			}
+			failoverUsed.Store(false)
+			return pass, nil
 		}
-		failoverUsed.Store(false)
-		return pass, nil
+		lastErr = err
 	}
-	lastErr := err
 	for _, cand := range p.FailoverCandidates(active.ID) {
 		cctx, ccancel := context.WithTimeout(context.Background(), 15*time.Second)
 		cpass, cerr := p.EnsureFreshPass(cctx, cand)

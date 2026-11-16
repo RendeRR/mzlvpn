@@ -1,6 +1,8 @@
 package accounts
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -196,5 +198,40 @@ func TestNeedsCheck(t *testing.T) {
 	activeStale := &Account{Status: StatusReady, Enabled: true, Active: true, LastCheckAt: now.Add(-7 * time.Hour)}
 	if activeStale.NeedsCheck(now) {
 		t.Fatal("active account is maintained by live paths, not the sweep")
+	}
+}
+
+// Потерянный без перезахода аккаунт нельзя сделать активным: Activate
+// обязан отказать до сети и не трогать флаги (полевая находка
+// 2026-11-16: «В РАБОТУ» делала мёртвый профиль якобы активным).
+func TestActivateRefusesReauth(t *testing.T) {
+	p, err := LoadOrCreatePool(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := &Account{ID: "live", Email: "live@x", Status: StatusReady, Enabled: true, Active: true}
+	dead := &Account{ID: "dead", Email: "dead@x", Status: StatusReauthRequired, Enabled: true}
+	p.Accounts = []*Account{live, dead}
+	_ = p.saveLocked()
+
+	if _, err := p.Activate(context.Background(), "dead"); !errors.Is(err, fxa.ErrReauthRequired) {
+		t.Fatalf("Activate(reauth) err = %v, want ErrReauthRequired", err)
+	}
+	if dead.Active {
+		t.Fatal("reauth account got flagged active")
+	}
+	if !live.Active {
+		t.Fatal("live account lost the active flag")
+	}
+}
+
+// Вердикт reauth выводит аккаунт из ротации: карточка не должна
+// утверждать «в ротации» о потерянном аккаунте.
+func TestRecordCheckReauthLeavesRotation(t *testing.T) {
+	p := &Pool{}
+	acc := &Account{Status: StatusReady, Enabled: true}
+	p.recordCheckLocked(acc, HealthReauth, fxa.ErrReauthRequired)
+	if acc.Status != StatusReauthRequired || acc.Enabled {
+		t.Fatalf("reauth verdict: status=%q enabled=%v", acc.Status, acc.Enabled)
 	}
 }
