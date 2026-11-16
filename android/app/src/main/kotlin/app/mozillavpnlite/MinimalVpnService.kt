@@ -313,7 +313,13 @@ class MinimalVpnService : VpnService() {
             } else {
                 loc?.optString("name", "Germany")?.ifBlank { "Germany" } ?: "Germany"
             }
-            val host = loc?.optString("server_host", "fastly-masque.net") ?: "fastly-masque.net"
+            // «Германия (Munich)»: country, then the city in brackets —
+            // the raw endpoint host (muc139.m1.fastly-masque.net) is
+            // noise in a notification and was removed at the user's
+            // request (2026-11-16). City names come from the server
+            // list in English («Munich (MUC)» → «Munich»).
+            val city = loc?.optString("city", "")?.substringBefore(" (")?.trim().orEmpty()
+            val place = if (city.isBlank()) countryName else "$countryName ($city)"
 
             var activeEmail = ""
             val accs = root.optJSONArray("accounts")
@@ -327,8 +333,8 @@ class MinimalVpnService : VpnService() {
                 }
             }
 
-            val title = getString(R.string.notif_connected, countryName)
-            val subtitle = if (activeEmail.isNotBlank()) "$activeEmail · $host" else host
+            val title = getString(R.string.notif_connected, place)
+            val subtitle = activeEmail
             val nm = getSystemService(NotificationManager::class.java)
             nm?.notify(NOTIFICATION_ID, buildNotification(title, subtitle))
         } catch (_: Throwable) {}
