@@ -19,7 +19,12 @@ no round buttons.
 ## Features
 
 - **50 GB per month per account** — the quota the server issues to
-  every Mozilla account; the app tracks usage locally.
+  every Mozilla account; the app shows usage and remaining traffic
+  from the server's own data. From November 10, 2026 through
+  January 31, 2027, Mozilla has [uncapped data](https://blog.mozilla.org/en/firefox/built-in-vpn-unlimited-data/)
+  for the free built-in VPN: during this period the server marks
+  the quota as unlimited, and the app displays "unlimited traffic"
+  instead of numbers and does not rotate accounts on quota.
 - Mozilla account sign-in (FxA): password, email confirmation code and
   two-factor verification — right in the app.
 - Multiple accounts with automatic rotation by monthly quota (threshold

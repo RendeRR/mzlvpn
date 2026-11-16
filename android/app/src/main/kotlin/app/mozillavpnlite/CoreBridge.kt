@@ -15,6 +15,7 @@ data class AccountItem(
     val exhausted: Boolean,
     val usedBytes: Long,
     val limitBytes: Long,
+    val unlimited: Boolean = false,
     val status: String = "ready",
     val reason: String = "",
     val lastError: String = "",
@@ -220,6 +221,7 @@ object CoreBridge {
                     limit
                 }
                 val used = (limit - rem).coerceAtLeast(0L)
+                val unlimited = usage?.optBoolean("unlimited", false) ?: false
                 val isActive = o.optBoolean("active", false)
                 if (isActive) {
                     activeIdx = i
@@ -233,9 +235,10 @@ object CoreBridge {
                         position = o.optInt("position", i + 1),
                         active = isActive,
                         enabled = o.optBoolean("enabled", true),
-                        exhausted = statusStr == "reserved" || statusStr == "quota_exceeded" || rem <= 0L,
+                        exhausted = !unlimited && (statusStr == "reserved" || statusStr == "quota_exceeded" || rem <= 0L),
                         usedBytes = used,
                         limitBytes = limit,
+                        unlimited = unlimited,
                         status = statusStr,
                         reason = o.optString("reason", ""),
                         lastError = o.optString("last_error", ""),

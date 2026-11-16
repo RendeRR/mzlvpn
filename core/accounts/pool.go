@@ -67,7 +67,6 @@ type Pool struct {
 	mu               sync.Mutex
 	refreshMu        sync.Mutex
 	prewarming       bool
-	unsavedBytes     int64
 	filePath         string
 	ThresholdPercent int        `json:"threshold_percent"`
 	Accounts         []*Account `json:"accounts"`
@@ -161,7 +160,7 @@ func (p *Pool) recomputeLocked() {
 		if acc.Usage.RemainingBytes > acc.Usage.LimitBytes {
 			acc.Usage.RemainingBytes = acc.Usage.LimitBytes
 		}
-		if acc.Usage.RemainingBytes <= 0 || acc.Usage.UsedPercent() >= float64(p.ThresholdPercent) {
+		if !acc.Usage.Unlimited && (acc.Usage.RemainingBytes <= 0 || acc.Usage.UsedPercent() >= float64(p.ThresholdPercent)) {
 			// The quota-reserve mark may only overwrite a ready/reserved
 			// state — never a health mark (reauth, no_pass, …): this
 			// recompute runs on every save and every UI snapshot, and
@@ -178,117 +177,39 @@ func (p *Pool) recomputeLocked() {
 	}
 }
 
-// RecordTraffic subtracts transferred bytes from the active account's RemainingBytes
-// and returns true if the active account has crossed ThresholdPercent.
-func (p *Pool) RecordTraffic(deltaBytes int64) (shouldRotate bool) {
-	if deltaBytes <= 0 {
-		return false
+// adoptUsageLocked takes the server's quota snapshot as-is. Local
+// byte counting was removed at the user's request (2026-11-16):
+// the server is the only source of quota truth now. During
+// Mozilla's unlimited promo (Nov 2026 - Jan 2027) its snapshots
+// carry Unlimited=true with full remaining, and the app honours
+// that instead of counting bytes itself; when the promo ends the
+// snapshots go back to real numbers and rotation resumes on them.
+func adoptUsageLocked(acc *Account, incoming *guardian.QuotaUsage) {
+	if incoming == nil {
+		return
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	var active *Account
-	for _, a := range p.Accounts {
-		if a.Active {
-			active = a
-			break
-		}
-	}
-	if active == nil {
-		return false
-	}
-	if active.Usage == nil || active.Usage.LimitBytes <= 0 {
-		active.Usage = guardian.DefaultQuotaUsage()
-	}
-	active.Usage.RemainingBytes -= deltaBytes
-	if active.Usage.RemainingBytes < 0 {
-		active.Usage.RemainingBytes = 0
-	}
-
-	p.unsavedBytes += deltaBytes
-	if p.unsavedBytes >= 256*1024 {
-		p.unsavedBytes = 0
-		_ = p.saveLocked()
-	}
-
-	threshold := float64(p.ThresholdPercent)
-	usedPct := active.Usage.UsedPercent()
-	if usedPct >= (threshold - 5.0) {
-		go p.PrewarmNextReady(active.ID)
-	}
-	return usedPct >= threshold && len(p.Accounts) > 1
+	acc.Usage = incoming
 }
 
-// mergeUsageLocked folds freshly fetched server quota into the account's
-// locally tracked usage instead of replacing it. The token endpoint
-// reports the GRANT — its Remaining snaps back to the full limit on every
-// fetch — so the old wholesale replace wiped locally counted traffic on
-// every connect, and the UI ended up showing only the current session's
-// bytes. Local byte counting (RecordTraffic) is the continuous record,
-// so the merge keeps the LARGER of (locally counted used, server-reported
-// used) against the server's current limit. Only a new quota period (a
-// later ResetAt than the stored one) starts the count over.
-func mergeUsageLocked(acc *Account, incoming *guardian.QuotaUsage) {
-	if incoming == nil || incoming.Unlimited || incoming.LimitBytes <= 0 {
-		return
-	}
-	cur := acc.Usage
-	if cur == nil || cur.LimitBytes <= 0 {
-		acc.Usage = incoming
-		return
-	}
-	if !incoming.ResetAt.IsZero() && !cur.ResetAt.IsZero() && incoming.ResetAt.After(cur.ResetAt) {
-		acc.Usage = incoming // новый период квоты — счёт с нуля
-		return
-	}
-	usedLocal := cur.LimitBytes - cur.RemainingBytes
-	if usedLocal < 0 {
-		usedLocal = 0
-	}
-	usedServer := incoming.LimitBytes - incoming.RemainingBytes
-	if usedServer < 0 {
-		usedServer = 0
-	}
-	used := usedLocal
-	if usedServer > used {
-		used = usedServer
-	}
-	rem := incoming.LimitBytes - used
-	if rem < 0 {
-		rem = 0
-	}
-	resetAt := cur.ResetAt
-	if resetAt.IsZero() {
-		resetAt = incoming.ResetAt
-	}
-	acc.Usage = &guardian.QuotaUsage{
-		LimitBytes:     incoming.LimitBytes,
-		RemainingBytes: rem,
-		ResetAt:        resetAt,
-	}
-}
-
-// Flush persists the pool now, including the not-yet-saved traffic tail
-// (RecordTraffic writes at most every 256 KB).
+// Flush persists the pool now.
 func (p *Pool) Flush() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.unsavedBytes = 0
 	_ = p.saveLocked()
 }
 
-// UpdateQuotaFromHeaders merges the active account's quota from
-// X-Quota-Limit / X-Quota-Remaining headers, when present.
+// UpdateQuotaFromHeaders adopts the active account's quota from
+// X-Quota-* headers, when present (including the unlimited flag).
 func (p *Pool) UpdateQuotaFromHeaders(h http.Header) {
 	parsed := guardian.ParseQuotaHeaders(h)
-	if parsed == nil || parsed.Unlimited {
+	if parsed == nil {
 		return
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, a := range p.Accounts {
 		if a.Active {
-			mergeUsageLocked(a, parsed)
+			adoptUsageLocked(a, parsed)
 			_ = p.saveLocked()
 			break
 		}
@@ -555,7 +476,7 @@ func (p *Pool) obtainPass(ctx context.Context, acc *Account) (*guardian.ProxyPas
 		// HTTP 429 Guardian returns a usage-only ProxyPass with no token.
 		acc.LastPass = pass
 		if pass.Usage != nil && !pass.Usage.Unlimited && pass.Usage.LimitBytes > 0 {
-			mergeUsageLocked(acc, pass.Usage)
+			adoptUsageLocked(acc, pass.Usage)
 		} else if acc.Usage == nil || acc.Usage.LimitBytes <= 0 {
 			acc.Usage = guardian.DefaultQuotaUsage()
 		}
@@ -820,8 +741,8 @@ func (p *Pool) SnapshotAccounts() ([]*Account, int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.recomputeLocked()
-	// Deep-copy: callers JSON-marshal the snapshot while RecordTraffic and
-	// EnsureFreshPass keep mutating the live accounts — sharing pointers
+	// Deep-copy: callers JSON-marshal the snapshot while EnsureFreshPass
+	// and the header callbacks keep mutating the live accounts — sharing pointers
 	// here was a data race.
 	out := make([]*Account, 0, len(p.Accounts))
 	for _, a := range p.Accounts {

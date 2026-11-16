@@ -89,11 +89,11 @@ func Start(dataDir string, autoConnect bool, language string) error {
 	loadEvents(dataDir)
 	go sweepAccounts()
 
-	engine.OnTrafficBytes = func(delta int64) {
-		if p.RecordTraffic(delta) {
-			go rotateActiveAccount(p)
-		}
-	}
+	// No local traffic counting (removed 2026-11-16 at the user's
+	// request): quota state comes only from the server's snapshots
+	// and headers, and quota rotation is driven by the proxy's own
+	// exhaustion signal below plus the refresh path's threshold
+	// check against the server-reported usage.
 	engine.OnQuotaHeaders = func(h http.Header) {
 		p.UpdateQuotaFromHeaders(h)
 	}

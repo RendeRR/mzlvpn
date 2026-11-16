@@ -1425,20 +1425,21 @@ private fun HomeTabScreen(
                             AccountPlateHeader(acc = acc, isActive = isActive)
                             QuotaDrum(
                                 fraction = acc.usedBytes.toDouble() / acc.limitBytes.coerceAtLeast(1L).toDouble(),
-                                alarm = pct >= snap.thresholdPct
+                                alarm = !acc.unlimited && pct >= snap.thresholdPct
                             )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = stringResource(R.string.quota_used_line, CoreBridge.formatBytes(acc.usedBytes), CoreBridge.formatBytes(acc.limitBytes)),
+                                    text = if (acc.unlimited) stringResource(R.string.quota_unlimited)
+                                    else stringResource(R.string.quota_used_line, CoreBridge.formatBytes(acc.usedBytes), CoreBridge.formatBytes(acc.limitBytes)),
                                     color = InkSoft,
                                     fontSize = 11.sp,
                                     fontFamily = PriborFonts.mono(FontWeight.Normal)
                                 )
                                 Text(
-                                    text = stringResource(R.string.quota_threshold_line, pct, snap.thresholdPct),
+                                    text = if (acc.unlimited) "" else stringResource(R.string.quota_threshold_line, pct, snap.thresholdPct),
                                     color = InkSoft,
                                     fontSize = 11.sp,
                                     fontFamily = PriborFonts.mono(FontWeight.Normal)
@@ -1864,10 +1865,11 @@ private fun AccountsTabScreen(
 
                 QuotaDrum(
                     fraction = acc.usedBytes.toDouble() / acc.limitBytes.coerceAtLeast(1L).toDouble(),
-                    alarm = pct >= snap.thresholdPct
+                    alarm = !acc.unlimited && pct >= snap.thresholdPct
                 )
                 Text(
-                    text = "${CoreBridge.formatBytes(acc.usedBytes)} / ${CoreBridge.formatBytes(acc.limitBytes)} ($pct%)",
+                    text = if (acc.unlimited) stringResource(R.string.quota_unlimited)
+                    else "${CoreBridge.formatBytes(acc.usedBytes)} / ${CoreBridge.formatBytes(acc.limitBytes)} ($pct%)",
                     color = InkSoft,
                     fontSize = 12.sp,
                     fontFamily = PriborFonts.mono(FontWeight.Normal)

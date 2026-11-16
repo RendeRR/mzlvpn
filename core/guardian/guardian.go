@@ -57,7 +57,7 @@ func (u *QuotaUsage) UsedBytes() int64 {
 }
 
 func (u *QuotaUsage) UsedPercent() float64 {
-	if u == nil || u.LimitBytes <= 0 {
+	if u == nil || u.Unlimited || u.LimitBytes <= 0 {
 		return 0
 	}
 	return float64(u.UsedBytes()) * 100.0 / float64(u.LimitBytes)
