@@ -2563,6 +2563,17 @@ private fun FxaWebViewDialog(
                 } catch (_: Throwable) {}
             }
             webViewRef = null
+            // The dialog is gone (success, manual close or dismiss):
+            // wipe the login WebView's cookies and storage so nothing
+            // from the session lingers in the shared CookieManager.
+            // This used to happen at capture time, back when capture
+            // was the last step; since beta8 capture fires at login,
+            // mid-flow, and the page still needs that state.
+            try {
+                CookieManager.getInstance().removeAllCookies(null)
+                CookieManager.getInstance().flush()
+                android.webkit.WebStorage.getInstance().deleteAllData()
+            } catch (_: Throwable) {}
         }
     }
 
@@ -2681,18 +2692,16 @@ private fun FxaWebViewDialog(
                                 @JavascriptInterface
                                 fun onFxaLogin(email: String, sessionToken: String) {
                                     if (sessionToken.length >= 32) {
-                                        post {
-                                            // Token captured — the login
-                                            // WebView's cookies and storage
-                                            // are no longer needed; wipe
-                                            // them so nothing from the
-                                            // session lingers in the shared
-                                            // CookieManager.
-                                            CookieManager.getInstance().removeAllCookies(null)
-                                            CookieManager.getInstance().flush()
-                                            android.webkit.WebStorage.getInstance().deleteAllData()
-                                            onSessionCaptured(email, sessionToken)
-                                        }
+                                        // Do NOT wipe cookies/storage
+                                        // here: since beta8 the capture
+                                        // fires at login, mid-flow, and
+                                        // the FxA page still needs its
+                                        // session state to reach the
+                                        // code step — wiping bounced it
+                                        // back to the sign-in form
+                                        // (field report on beta8). The
+                                        // wipe lives in onDispose now.
+                                        post { onSessionCaptured(email, sessionToken) }
                                     }
                                 }
                             },
