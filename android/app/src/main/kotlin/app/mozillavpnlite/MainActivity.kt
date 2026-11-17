@@ -2548,11 +2548,6 @@ private fun FxaWebViewDialog(
     }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var pageLoading by remember { mutableStateOf(true) }
-    // Temporary diagnostic (beta8): the last WebChannel event the FxA
-    // page broadcast, shown under the URL so a stuck capture can be
-    // diagnosed from a screenshot. Remove once the capture flow is
-    // proven in the field.
-    var lastFxaEvent by remember { mutableStateOf("") }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -2609,14 +2604,6 @@ private fun FxaWebViewDialog(
                         fontSize = 12.sp,
                         fontFamily = PriborFonts.mono(FontWeight.Normal)
                     )
-                    if (lastFxaEvent.isNotEmpty()) {
-                        Text(
-                            text = "fxa: $lastFxaEvent",
-                            color = InkSoft,
-                            fontSize = 10.sp,
-                            fontFamily = PriborFonts.mono(FontWeight.Normal)
-                        )
-                    }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2684,11 +2671,6 @@ private fun FxaWebViewDialog(
 
                         addJavascriptInterface(
                             object {
-                                @JavascriptInterface
-                                fun onFxaEvent(label: String) {
-                                    post { lastFxaEvent = label }
-                                }
-
                                 @JavascriptInterface
                                 fun onFxaLogin(email: String, sessionToken: String) {
                                     if (sessionToken.length >= 32) {
@@ -2776,16 +2758,12 @@ private fun FxaWebViewDialog(
                                                 // fires in the new document before
                                                 // the hook is listening there.
                                                 if (window.MozillaVpnBridge) {
-                                                    window.MozillaVpnBridge.onFxaEvent('login · ' + (data.verified === false ? 'unverified' : 'verified') + ' · token');
                                                     window.MozillaVpnBridge.onFxaLogin(data.email || '', data.sessionToken);
                                                 }
                                             }
                                         } else if (cmd === 'fxaccounts:verified') {
-                                            if (window.MozillaVpnBridge) {
-                                                window.MozillaVpnBridge.onFxaEvent('verified' + (data.sessionToken ? ' · token' : ' · no token'));
-                                                if (data.sessionToken) {
-                                                    window.MozillaVpnBridge.onFxaLogin(data.email || '', data.sessionToken);
-                                                }
+                                            if (data.sessionToken && window.MozillaVpnBridge) {
+                                                window.MozillaVpnBridge.onFxaLogin(data.email || '', data.sessionToken);
                                             }
                                         }
                                     } catch (err) {}
