@@ -30,10 +30,14 @@ jobs:
 
       - name: Test Go core
         working-directory: core
+        env:
+          # The race detector needs cgo; the runner's gcc covers it
+          # (verified locally: the full suite passes under -race).
+          CGO_ENABLED: "1"
         run: |
           go mod tidy
           go vet ./...
-          go test ./...
+          go test -race ./...
 
       - name: Set up Java 17
         uses: actions/setup-java@v4

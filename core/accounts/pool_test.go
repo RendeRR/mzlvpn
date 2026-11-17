@@ -326,3 +326,86 @@ func TestObtainPassAdoptsUnlimited(t *testing.T) {
 		t.Fatalf("unlimited snapshot not adopted: %+v", acc.Usage)
 	}
 }
+
+// Fallback-выбор активного аккаунта (ActiveAccount, Remove,
+// ToggleEnabled) не должен воскрешать аккаунт, который пользователь
+// выключил, или потерянный (reauth_required): аудит 2026-11-17 нашёл
+// безусловное продвижение Accounts[0].
+func TestActiveAccountFallbackSkipsIneligible(t *testing.T) {
+	p, err := LoadOrCreatePool(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	off := &Account{ID: "off", Status: StatusReady, Enabled: false}
+	dead := &Account{ID: "dead", Status: StatusReauthRequired, Enabled: true}
+	live := &Account{ID: "live", Status: StatusReady, Enabled: true}
+	p.Accounts = []*Account{off, dead, live}
+
+	got := p.ActiveAccount()
+	if got != live || !live.Active {
+		t.Fatalf("fallback picked %v, want live", got)
+	}
+	if off.Active || dead.Active {
+		t.Fatal("ineligible account got flagged active")
+	}
+}
+
+func TestActiveAccountFallbackNoneEligible(t *testing.T) {
+	p, err := LoadOrCreatePool(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	off := &Account{ID: "off", Status: StatusReady, Enabled: false}
+	dead := &Account{ID: "dead", Status: StatusReauthRequired, Enabled: false}
+	p.Accounts = []*Account{off, dead}
+
+	if got := p.ActiveAccount(); got != nil {
+		t.Fatalf("fallback picked %v, want nil", got)
+	}
+	if off.Active || dead.Active {
+		t.Fatal("ineligible account got flagged active")
+	}
+}
+
+func TestRemovePromotesEligible(t *testing.T) {
+	p, err := LoadOrCreatePool(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur := &Account{ID: "cur", Status: StatusReady, Enabled: true, Active: true}
+	off := &Account{ID: "off", Status: StatusReady, Enabled: false}
+	live := &Account{ID: "live", Status: StatusReady, Enabled: true}
+	p.Accounts = []*Account{cur, off, live}
+	_ = p.saveLocked()
+
+	if err := p.Remove("cur"); err != nil {
+		t.Fatal(err)
+	}
+	if off.Active {
+		t.Fatal("disabled account promoted on Remove")
+	}
+	if !live.Active {
+		t.Fatal("eligible account not promoted on Remove")
+	}
+}
+
+func TestToggleEnabledPromotionSkipsReauth(t *testing.T) {
+	p, err := LoadOrCreatePool(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cur := &Account{ID: "cur", Status: StatusReady, Enabled: true, Active: true}
+	dead := &Account{ID: "dead", Status: StatusReauthRequired, Enabled: true}
+	p.Accounts = []*Account{cur, dead}
+	_ = p.saveLocked()
+
+	if err := p.ToggleEnabled("cur"); err != nil {
+		t.Fatal(err)
+	}
+	if cur.Active {
+		t.Fatal("disabled account kept the active flag")
+	}
+	if dead.Active {
+		t.Fatal("reauth account promoted on ToggleEnabled")
+	}
+}

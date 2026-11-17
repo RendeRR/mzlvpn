@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"mozillavpnlite/core/geoip"
 )
@@ -52,6 +53,12 @@ func loadSettings(dataDir string) {
 	applyBypass()
 }
 
+// settingsSaveMu serializes the disk writes of saveSettings: the
+// snapshot is taken under mu but written after it is released, and
+// without a write mutex two rapid UI actions could land on disk out
+// of order, the older snapshot overwriting the newer one.
+var settingsSaveMu sync.Mutex
+
 func saveSettings() {
 	path := settingsPath
 	if path == "" {
@@ -64,7 +71,9 @@ func saveSettings() {
 	if err != nil {
 		return
 	}
-	_ = os.WriteFile(path, data, 0600)
+	settingsSaveMu.Lock()
+	_ = atomicWriteFile(path, data)
+	settingsSaveMu.Unlock()
 }
 
 // applyBypass pushes the current bypass state into the tunnel engine:

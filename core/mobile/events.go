@@ -45,12 +45,15 @@ func recordEvent(kind, text string) {
 	if len(eventsList) > maxAccountEvents {
 		eventsList = eventsList[len(eventsList)-maxAccountEvents:]
 	}
-	path := eventsPath
-	data, _ := json.Marshal(eventsList)
-	eventsMu.Unlock()
-	if path != "" {
-		_ = os.WriteFile(path, data, 0600)
+	// The write stays inside eventsMu: marshaling under the lock but
+	// writing after release let two rapid events land on disk out of
+	// order. Events are rare and the file is tiny, so the fsync cost
+	// under the lock is acceptable.
+	if eventsPath != "" {
+		data, _ := json.Marshal(eventsList)
+		_ = atomicWriteFile(eventsPath, data)
 	}
+	eventsMu.Unlock()
 }
 
 func eventsSnapshot() []AccountEvent {

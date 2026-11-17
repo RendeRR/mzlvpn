@@ -456,18 +456,16 @@ func (p *Pool) obtainPass(ctx context.Context, acc *Account) (*guardian.ProxyPas
 	}
 	p.refreshMu.Unlock()
 
-	pass, err := guardian.FetchProxyPass(ctx, acc.Tokens.AccessToken)
+	p.mu.Lock()
+	accessToken := acc.Tokens.AccessToken
+	p.mu.Unlock()
+
+	pass, err := guardian.FetchProxyPass(ctx, accessToken)
 	if errors.Is(err, guardian.ErrTokenInvalid) {
 		// The stored access token can die ahead of its nominal expiry —
 		// token chains get revoked when the account is used elsewhere.
 		// Force one refresh and retry before condemning the account.
-		if refreshed, rerr := fxa.RefreshAccessToken(ctx, acc.Tokens.RefreshToken); rerr == nil {
-			p.mu.Lock()
-			acc.Tokens = *refreshed
-			_ = p.saveLocked()
-			p.mu.Unlock()
-			pass, err = guardian.FetchProxyPass(ctx, refreshed.AccessToken)
-		}
+		pass, err = p.refreshAfterTokenInvalid(ctx, acc, accessToken)
 	}
 
 	if err == nil && pass != nil && pass.RawToken != "" {
@@ -501,6 +499,38 @@ func (p *Pool) obtainPass(ctx context.Context, acc *Account) (*guardian.ProxyPas
 	_ = p.saveLocked()
 	p.mu.Unlock()
 	return nil, err
+}
+
+// refreshAfterTokenInvalid handles a Guardian 401 for the given
+// access token: force one FxA refresh and retry the pass fetch. The
+// refresh runs under refreshMu — the same mutex as the proactive
+// refresh at the top of obtainPass. It used to run bare, so two
+// overlapping checks (this 401 path racing the token refresh loop, a
+// prewarm or the app-open sweep) could present the same one-time
+// refresh token twice; the loser received invalid_grant and a healthy
+// account was condemned as reauth-required. Under the mutex the
+// tokens are re-read first: if a sibling call already replaced the
+// failed token, retry with the current one and spend no refresh.
+func (p *Pool) refreshAfterTokenInvalid(ctx context.Context, acc *Account, failedToken string) (*guardian.ProxyPass, error) {
+	p.refreshMu.Lock()
+	defer p.refreshMu.Unlock()
+
+	p.mu.Lock()
+	current := acc.Tokens
+	p.mu.Unlock()
+	if current.AccessToken != "" && current.AccessToken != failedToken {
+		return guardian.FetchProxyPass(ctx, current.AccessToken)
+	}
+	refreshed, err := fxa.RefreshAccessToken(ctx, current.RefreshToken)
+	if err != nil {
+		// Keep the caller's original verdict: it records the 401.
+		return nil, guardian.ErrTokenInvalid
+	}
+	p.mu.Lock()
+	acc.Tokens = *refreshed
+	_ = p.saveLocked()
+	p.mu.Unlock()
+	return guardian.FetchProxyPass(ctx, refreshed.AccessToken)
 }
 
 // EnsureFreshPass returns a valid ProxyPass for acc, rotating to the
@@ -671,7 +701,7 @@ func (p *Pool) ToggleEnabled(id string) error {
 			if !a.Enabled && a.Active {
 				a.Active = false
 				for _, other := range p.Accounts {
-					if other.ID != id && other.Enabled {
+					if other.ID != id && eligibleForActive(other) {
 						other.Active = true
 						break
 					}
@@ -710,8 +740,13 @@ func (p *Pool) Remove(id string) error {
 		if a.ID == id {
 			wasActive := a.Active
 			p.Accounts = append(p.Accounts[:i], p.Accounts[i+1:]...)
-			if wasActive && len(p.Accounts) > 0 {
-				p.Accounts[0].Active = true
+			if wasActive {
+				for _, other := range p.Accounts {
+					if eligibleForActive(other) {
+						other.Active = true
+						break
+					}
+				}
 			}
 			return p.saveLocked()
 		}
@@ -732,6 +767,16 @@ func (p *Pool) SetThreshold(percent int) error {
 	return p.saveLocked()
 }
 
+// eligibleForActive reports whether the account may receive the
+// Active flag when the pool picks a new active account on its own
+// (the ActiveAccount fallback, promotion in Remove and ToggleEnabled):
+// user-enabled and not waiting for a fresh sign-in. An explicit user
+// Activate() is a different path — it refuses reauth accounts itself
+// and sets Enabled on success.
+func eligibleForActive(a *Account) bool {
+	return a.Enabled && a.Status != StatusReauthRequired
+}
+
 func (p *Pool) ActiveAccount() *Account {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -740,9 +785,17 @@ func (p *Pool) ActiveAccount() *Account {
 			return a
 		}
 	}
-	if len(p.Accounts) > 0 {
-		p.Accounts[0].Active = true
-		return p.Accounts[0]
+	// No account carries the flag (e.g. the active one was just
+	// disabled). Promote the first account that may hold it — never a
+	// disabled or reauth-required one: the old unconditional
+	// Accounts[0] promotion silently resurrected the very account the
+	// user had just switched off. If nothing qualifies, there is no
+	// active account; every caller already handles nil.
+	for _, a := range p.Accounts {
+		if eligibleForActive(a) {
+			a.Active = true
+			return a
+		}
 	}
 	return nil
 }

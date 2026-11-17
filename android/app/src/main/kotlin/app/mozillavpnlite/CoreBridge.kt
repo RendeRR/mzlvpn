@@ -56,7 +56,7 @@ data class CoreSnapshot(
     val bypass: Boolean = false,
     val homeCountry: String = "RU",
     val protocol: String = "h2",
-    val activeAccount: Int = 0,
+    val activeAccount: Int = -1,
     val thresholdPct: Int = 95,
     val accounts: List<AccountItem> = emptyList(),
     val locations: List<LocationItem> = emptyList(),
@@ -216,7 +216,10 @@ object CoreBridge {
             val locArr = root.optJSONArray("locations") ?: JSONArray()
 
             val accounts = mutableListOf<AccountItem>()
-            var activeIdx = 0
+            // -1 means "no account is active": defaulting to 0 made a
+            // disabled first account pose as the active one on the
+            // home tab whenever no account carried the active flag.
+            var activeIdx = -1
             for (i in 0 until accArr.length()) {
                 val o = accArr.optJSONObject(i) ?: continue
                 val usage = o.optJSONObject("usage")

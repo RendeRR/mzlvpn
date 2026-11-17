@@ -504,6 +504,7 @@ func (e *Engine) handleSocks5(client net.Conn) {
 				writeSocksReply(client, 0x05) // connection refused
 				return
 			}
+			configureLowLatencyTCP(remote)
 			defer remote.Close()
 			if err := writeSocksReply(client, 0x00); err != nil {
 				return
@@ -570,16 +571,28 @@ func (e *Engine) shouldBypass(host string) bool {
 }
 
 // relayDirect pumps bytes between the SOCKS client and a directly
-// dialed connection (home-country bypass).
+// dialed connection (home-country bypass). The half-close is
+// symmetric: whichever direction ends first, the peer gets a FIN via
+// CloseWrite, and the function waits for the other direction to
+// drain before returning (the caller then closes both sockets).
+// Without the client-side CloseWrite, a server that half-closed
+// after its response left the app waiting on a connection that
+// would never deliver or finish.
 func (e *Engine) relayDirect(client net.Conn, remote net.Conn) {
 	onBytes := e.OnTrafficBytes
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		_ = copyZeroAlloc(remote, client, onBytes)
 		if tc, ok := remote.(*net.TCPConn); ok {
 			_ = tc.CloseWrite()
 		}
 	}()
 	_ = copyZeroAlloc(client, remote, onBytes)
+	if tc, ok := client.(*net.TCPConn); ok {
+		_ = tc.CloseWrite()
+	}
+	<-done
 }
 
 // writeSocksReply sends a SOCKS5 reply with a zeroed IPv4 bind address.
