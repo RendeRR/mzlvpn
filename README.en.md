@@ -32,6 +32,12 @@ no round buttons.
 - 32 locations, with a "fastest" pick by real on-device ping.
 - Two transports: **HTTP/2 CONNECT** (default) and HTTP/3 MASQUE.
   HTTP/3 (QUIC/UDP) is unreliable on many networks, hence the HTTP/2 default.
+- **Home sites go direct**: addresses of a chosen country (20 countries,
+  Russia by default) bypass the tunnel and load from your real IP
+  address. Banks, government services and local sites see a home
+  connection and work as usual, without the detour through the VPN;
+  all other traffic stays in the tunnel. The core decides by
+  destination IP; the country and the toggle live on the main screen.
 - Quota as reported by the server: the app shows the limit and remaining
   quota from the Guardian response, and "unlimited traffic" instead of
   numbers while Mozilla's unlimited promo runs (details in
@@ -79,7 +85,7 @@ the network is unavailable.
 ## Repository layout
 
 - `android/` — the app: Kotlin/Compose UI, VpnService, the hev JNI glue.
-- `core/` — the Go core: `fxa`, `guardian`, `accounts`, `tunnel`,
+- `core/` — the Go core: `fxa`, `guardian`, `accounts`, `tunnel`, `geoip`,
   `mobile`, `serverlist`, `lang` (core message language).
 - `docs/` — documentation: `QUOTA.md` (facts about Mozilla's quota and
   the counting decisions, in Russian), `IMPROVEMENTS.md` (the improvement
