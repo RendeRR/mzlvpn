@@ -13,6 +13,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -26,6 +27,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -165,6 +167,7 @@ fun MozillaVpnLiteApp() {
 
     var snap by remember { mutableStateOf(CoreSnapshot()) }
     var tab by remember { mutableIntStateOf(0) } // 0 = Пульт, 1 = Аккаунты, 2 = Серверы
+    var showHomePicker by remember { mutableStateOf(false) }
     var isConnecting by remember { mutableStateOf(false) }
     var isPinging by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -334,13 +337,26 @@ fun MozillaVpnLiteApp() {
                 .background(Ink)
         )
 
+        BackHandler(enabled = showHomePicker) { showHomePicker = false }
+
         // Main Screen Content
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
         ) {
-            when (tab) {
+            if (showHomePicker) {
+                HomeCountryPickerScreen(
+                    snap = snap,
+                    onPick = { code ->
+                        scope.launch {
+                            CoreBridge.setHomeCountry(code)
+                            snap = CoreBridge.getSnapshot()
+                        }
+                        showHomePicker = false
+                    }
+                )
+            } else when (tab) {
                 0 -> HomeTabScreen(
                     snap = snap,
                     activeLocation = activeLocation,
@@ -363,7 +379,14 @@ fun MozillaVpnLiteApp() {
                             CoreBridge.selectLocation(locCode)
                             snap = CoreBridge.getSnapshot()
                         }
-                    }
+                    },
+                    onBypassChange = { enabled ->
+                        scope.launch {
+                            CoreBridge.setBypassEnabled(enabled)
+                            snap = CoreBridge.getSnapshot()
+                        }
+                    },
+                    onOpenHomePicker = { showHomePicker = true }
                 )
 
                 1 -> AccountsTabScreen(
@@ -566,19 +589,19 @@ fun MozillaVpnLiteApp() {
             BottomNavTabItem(
                 selected = tab == 0,
                 label = stringResource(R.string.tab_console),
-                onClick = { tab = 0 },
+                onClick = { tab = 0; showHomePicker = false },
                 modifier = Modifier.weight(1f)
             )
             BottomNavTabItem(
                 selected = tab == 1,
                 label = stringResource(R.string.tab_accounts, snap.accounts.size),
-                onClick = { tab = 1 },
+                onClick = { tab = 1; showHomePicker = false },
                 modifier = Modifier.weight(1f)
             )
             BottomNavTabItem(
                 selected = tab == 2,
                 label = stringResource(R.string.tab_servers, snap.locations.size),
-                onClick = { tab = 2 },
+                onClick = { tab = 2; showHomePicker = false },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -761,6 +784,199 @@ private fun QuotaDrum(fraction: Double, alarm: Boolean) {
  * ступенчатое, без пружин (tween 150 мс).
  */
 @Composable
+/** Мини-рубильник для карточки «Домашние сайты»: та же геометрия, что у
+ * главного, — оранжевый сегмент и чёрная рукоять с насечками. */
+@Composable
+private fun MiniBreakerToggle(checked: Boolean, onClick: () -> Unit) {
+    @Composable
+    fun grip() {
+        Box(
+            modifier = Modifier
+                .width(22.dp)
+                .fillMaxHeight()
+                .background(Ink),
+            contentAlignment = Alignment.Center
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                repeat(2) {
+                    Box(
+                        modifier = Modifier
+                            .width(2.5.dp)
+                            .height(12.dp)
+                            .background(Paper)
+                    )
+                }
+            }
+        }
+    }
+    Row(
+        modifier = Modifier
+            .width(56.dp)
+            .height(30.dp)
+            .border(BorderStroke(2.dp, Ink), RectangleShape)
+            .clickable { onClick() }
+    ) {
+        if (checked) {
+            Box(
+                modifier = Modifier
+                    .width(30.dp)
+                    .fillMaxHeight()
+                    .background(Signal)
+            )
+            grip()
+        } else {
+            grip()
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight()
+                    .background(PaperDeep)
+            )
+        }
+    }
+}
+
+/** Выбор «своей страны» для обхода туннеля — экран в стиле вкладки
+ * «Серверы»: заголовок, поиск, список; выбранная строка подсвечена. */
+@Composable
+private fun HomeCountryPickerScreen(
+    snap: CoreSnapshot,
+    onPick: (String) -> Unit
+) {
+    var query by remember { mutableStateOf("") }
+    val all = remember { CoreBridge.homeCountries() }
+    val sorted = remember(all, snap.homeCountry) {
+        val sel = all.filter { it.code.equals(snap.homeCountry, ignoreCase = true) }
+        val rest = all.filter { !it.code.equals(snap.homeCountry, ignoreCase = true) }
+            .sortedBy { it.name }
+        sel + rest
+    }
+    val shown = if (query.isBlank()) sorted else sorted.filter {
+        it.name.contains(query, ignoreCase = true) ||
+            it.code.contains(query, ignoreCase = true)
+    }
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp),
+        contentPadding = PaddingValues(vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = stringResource(R.string.your_country),
+                    color = Ink,
+                    fontSize = 38.sp,
+                    fontFamily = PriborFonts.display,
+                    maxLines = 1
+                )
+                Text(
+                    text = stringResource(R.string.picker_subtitle),
+                    color = InkSoft,
+                    fontSize = 11.sp,
+                    fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.5.sp
+                )
+                Text(
+                    text = stringResource(R.string.picker_source),
+                    color = InkSoft,
+                    fontSize = 11.sp,
+                    fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.5.sp
+                )
+            }
+        }
+        item {
+            Column {
+                Text(
+                    text = stringResource(R.string.search_label),
+                    color = InkSoft,
+                    fontSize = 12.sp,
+                    fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 2.sp
+                )
+                BasicTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        color = Ink,
+                        fontSize = 15.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.Normal)
+                    ),
+                    cursorBrush = SolidColor(Signal),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    decorationBox = { inner ->
+                        Box {
+                            if (query.isEmpty()) {
+                                Text(
+                                    text = stringResource(R.string.search_country_hint),
+                                    color = InkSoft,
+                                    fontSize = 15.sp,
+                                    fontFamily = PriborFonts.mono(FontWeight.Normal)
+                                )
+                            }
+                            inner()
+                        }
+                    }
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.dp)
+                        .background(Ink)
+                )
+            }
+        }
+        items(shown) { c ->
+            val selected = c.code.equals(snap.homeCountry, ignoreCase = true)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(if (selected) PaperDeep else Paper)
+                    .border(
+                        BorderStroke(if (selected) 2.dp else 1.dp, Ink),
+                        RectangleShape
+                    )
+                    .clickable { onPick(c.code) },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(6.dp)
+                        .height(52.dp)
+                        .background(if (selected) Signal else Color.Transparent)
+                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = c.code,
+                        color = Ink,
+                        fontSize = 19.sp,
+                        fontFamily = PriborFonts.display,
+                        modifier = Modifier.width(52.dp)
+                    )
+                    Text(
+                        text = c.name,
+                        color = Ink,
+                        fontSize = 14.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+    }
+}
+
 private fun BreakerSwitch(
     isOn: Boolean,
     isConnecting: Boolean,
@@ -1322,7 +1538,9 @@ private fun HomeTabScreen(
     onToggleTunnel: () -> Unit,
     onProtocolChange: (String) -> Unit,
     onSelectAccount: (Int) -> Unit,
-    onSelectLocation: (String) -> Unit
+    onSelectLocation: (String) -> Unit,
+    onBypassChange: (Boolean) -> Unit,
+    onOpenHomePicker: () -> Unit
 ) {
     val isConnected = snap.state == "connected"
 
@@ -1406,6 +1624,64 @@ private fun HomeTabScreen(
                     selectedIndex = if (snap.protocol == "h3") 1 else 0,
                     onSelect = { idx -> onProtocolChange(if (idx == 1) "h3" else "h2") }
                 )
+            }
+        }
+
+        // 1b. Домашние сайты: адреса выбранной страны идут напрямую,
+        // в обход туннеля (geoip в ядре; основной кейс — госуслуги и банки).
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SectionLabel(stringResource(R.string.home_sites))
+                val countryName = CoreBridge.homeCountryName(snap.homeCountry)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Paper)
+                        .border(BorderStroke(2.dp, Ink), RectangleShape)
+                        .padding(13.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (snap.bypass) {
+                            Box(
+                                modifier = Modifier
+                                    .size(9.dp)
+                                    .background(Signal)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(
+                            text = stringResource(R.string.bypass_tunnel),
+                            color = if (snap.bypass) Ink else InkSoft,
+                            fontSize = 13.sp,
+                            fontFamily = PriborFonts.mono(FontWeight.Bold),
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+                        MiniBreakerToggle(
+                            checked = snap.bypass,
+                            onClick = { onBypassChange(!snap.bypass) }
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onOpenHomePicker() }
+                    ) {
+                        SpecRow(
+                            stringResource(R.string.your_country),
+                            "${snap.homeCountry} · ${countryName.uppercase()} ›"
+                        )
+                    }
+                    Text(
+                        text = stringResource(
+                            if (snap.bypass) R.string.bypass_note_on else R.string.bypass_note_off
+                        ),
+                        color = InkSoft,
+                        fontSize = 11.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.Normal)
+                    )
+                }
             }
         }
 

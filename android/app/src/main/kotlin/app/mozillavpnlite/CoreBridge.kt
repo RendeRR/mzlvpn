@@ -28,6 +28,11 @@ data class EventItem(
     val text: String
 )
 
+data class HomeCountry(
+    val code: String,
+    val name: String
+)
+
 data class LocationItem(
     val code: String,
     val flag: String,
@@ -48,6 +53,8 @@ data class ActionOutcome(
 data class CoreSnapshot(
     val state: String = "disconnected",
     val selectedLocation: String = "DE",
+    val bypass: Boolean = false,
+    val homeCountry: String = "RU",
     val protocol: String = "h2",
     val activeAccount: Int = 0,
     val thresholdPct: Int = 95,
@@ -305,6 +312,8 @@ object CoreBridge {
             CoreSnapshot(
                 state = if (isConnected) "connected" else "disconnected",
                 selectedLocation = selLoc,
+                bypass = root.optBoolean("bypass", false),
+                homeCountry = root.optString("home_country", "RU"),
                 protocol = protoShort,
                 activeAccount = activeIdx,
                 thresholdPct = root.optInt("threshold_percent", 95),
@@ -346,6 +355,49 @@ object CoreBridge {
             MinimalVpnService.refreshNotification(appCtx)
         } catch (_: Throwable) {}
     }
+
+    suspend fun setBypassEnabled(enabled: Boolean) = withContext(Dispatchers.IO) {
+        try {
+            mobile.Mobile.setBypassEnabled(enabled)
+        } catch (_: Throwable) {}
+    }
+
+    suspend fun setHomeCountry(code: String) = withContext(Dispatchers.IO) {
+        try {
+            mobile.Mobile.setHomeCountry(code)
+        } catch (_: Throwable) {}
+    }
+
+    /** Countries the geoip bypass has data for; names follow the UI language. */
+    fun homeCountries(): List<HomeCountry> {
+        val ru = languageCode() == "ru"
+        val raw = listOf(
+            Triple("AM", "Armenia", "Армения"),
+            Triple("AZ", "Azerbaijan", "Азербайджан"),
+            Triple("BY", "Belarus", "Беларусь"),
+            Triple("DE", "Germany", "Германия"),
+            Triple("EE", "Estonia", "Эстония"),
+            Triple("FR", "France", "Франция"),
+            Triple("GB", "United Kingdom", "Великобритания"),
+            Triple("GE", "Georgia", "Грузия"),
+            Triple("KG", "Kyrgyzstan", "Кыргызстан"),
+            Triple("KZ", "Kazakhstan", "Казахстан"),
+            Triple("LT", "Lithuania", "Литва"),
+            Triple("LV", "Latvia", "Латвия"),
+            Triple("MD", "Moldova", "Молдова"),
+            Triple("NL", "Netherlands", "Нидерланды"),
+            Triple("RU", "Russia", "Россия"),
+            Triple("TJ", "Tajikistan", "Таджикистан"),
+            Triple("TM", "Turkmenistan", "Туркменистан"),
+            Triple("UA", "Ukraine", "Украина"),
+            Triple("US", "United States", "США"),
+            Triple("UZ", "Uzbekistan", "Узбекистан")
+        )
+        return raw.map { (code, en, rus) -> HomeCountry(code, if (ru) rus else en) }
+    }
+
+    fun homeCountryName(code: String): String =
+        homeCountries().firstOrNull { it.code.equals(code, ignoreCase = true) }?.name ?: code
 
     suspend fun signInPassword(
         email: String,
