@@ -52,6 +52,24 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
           go install "golang.org/x/mobile/cmd/gomobile@$GOMOBILE_VERSION" "golang.org/x/mobile/cmd/gobind@$GOMOBILE_VERSION"
 
+      - name: Refresh geoip database (fallback to committed copy)
+        run: |
+          # Fresh prefix zones in every build: the APK ships a current
+          # database. ipdeny is a third-party source, so a failure here
+          # (network, bad data, failed sanity checks in the script)
+          # must NOT fail the build: roll the data files back to the
+          # committed copy and carry on with a warning.
+          if python3 core/geoip/fetch_data.py > /tmp/geoip-fetch.log 2>&1; then
+            cat /tmp/geoip-fetch.log
+            git diff --stat -- core/geoip/data | tail -3 || true
+            total=$(grep '^total:' /tmp/geoip-fetch.log | awk '{print $2}')
+            echo "::notice title=geoip::database refreshed from ipdeny ($total prefixes)"
+          else
+            echo "::warning title=geoip::refresh failed, building with the committed database"
+            cat /tmp/geoip-fetch.log || true
+            git checkout -- core/geoip/data
+          fi
+
       - name: Compile Optimized Go Core (core.aar)
         run: |
           mkdir -p android/app/libs

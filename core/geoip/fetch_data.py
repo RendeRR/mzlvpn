@@ -6,7 +6,9 @@ to minimal CIDR sets; we re-collapse defensively and store one CIDR
 per line in data/<cc>.txt.
 
 Run:  python3 fetch_data.py
-The generated files are committed to the repo; rerun to refresh.
+The generated files are committed to the repo as a fallback; CI also
+reruns this script before every build, so release APKs ship a fresh
+database (a failed refresh falls back to the committed copy).
 """
 import ipaddress
 import os
