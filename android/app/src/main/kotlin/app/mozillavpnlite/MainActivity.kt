@@ -2563,16 +2563,39 @@ private fun FxaWebViewDialog(
                     )
                 }
 
-                Text(
-                    text = stringResource(R.string.btn_close),
-                    color = Ink,
-                    fontSize = 13.sp,
-                    fontFamily = PriborFonts.mono(FontWeight.SemiBold),
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .clickable(onClick = onDismiss)
-                        .padding(6.dp)
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // A stuck FxA page (a lazy JS chunk that timed out
+                    // on a slow network leaves the SPA on its own error
+                    // screen saying "refresh the page") used to be a
+                    // dead end: the dialog has no browser chrome, so
+                    // the only escape was CLOSE, which kills the whole
+                    // sign-in flow. Reload keeps the flow's cookies and
+                    // storage, so the user resumes where they stuck.
+                    Text(
+                        text = stringResource(R.string.webview_reload),
+                        color = Ink,
+                        fontSize = 13.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clickable {
+                                pageLoading = true
+                                webViewRef?.reload()
+                            }
+                            .padding(6.dp)
+                    )
+
+                    Text(
+                        text = stringResource(R.string.btn_close),
+                        color = Ink,
+                        fontSize = 13.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier
+                            .clickable(onClick = onDismiss)
+                            .padding(6.dp)
+                    )
+                }
             }
 
             Box(
@@ -2737,6 +2760,12 @@ private fun FxaWebViewDialog(
 
                             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                                 super.onPageStarted(view, url, favicon)
+                                // Every full-page step of the FxA flow
+                                // (the confirm-code step reloads the
+                                // document) gets the loading plate, not
+                                // just the first load: a slow step
+                                // otherwise looks like a frozen page.
+                                pageLoading = true
                                 if (isFxaPage(url)) {
                                     view?.evaluateJavascript(injectScript, null)
                                 }

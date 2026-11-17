@@ -107,6 +107,7 @@
     <!-- WebView dialog -->
     <string name="webview_title">ВХОД В АККАУНТ MOZILLA</string>
     <string name="webview_loading">ЗАГРУЗКА…</string>
+    <string name="webview_reload">ОБНОВИТЬ</string>
 
     <!-- CoreBridge formatting and fallbacks -->
     <string name="unit_gb">%1$.2f ГБ</string>
