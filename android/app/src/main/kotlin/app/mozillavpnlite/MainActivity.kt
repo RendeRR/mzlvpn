@@ -174,7 +174,7 @@ fun MozillaVpnLiteApp() {
 
     // Account sign-in states
     var showAddForm by remember { mutableStateOf(false) }
-    var authMethod by remember { mutableIntStateOf(0) } // 0 = Прямой вход, 1 = Браузер Mozilla, 2 = Токен 64-hex
+    var authMethod by remember { mutableIntStateOf(1) } // 0 = Прямой вход, 1 = Браузер Mozilla (по умолчанию с 1.1.0-beta3: форма по паролю у владельца ни разу не сработала), 2 = Токен 64-hex
     var emailInput by remember { mutableStateOf("") }
     var passwordInput by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
@@ -2621,6 +2621,12 @@ private fun FxaWebViewDialog(
                             (function() {
                                 if (window.__mozVpnHooked) return;
                                 window.__mozVpnHooked = true;
+                                try {
+                                    var savedPending = window.localStorage.getItem('__mozVpnPendingLogin');
+                                    if (savedPending) {
+                                        window.__mozVpnPendingLogin = JSON.parse(savedPending);
+                                    }
+                                } catch (err) {}
                                 window.addEventListener('WebChannelMessageToChrome', function(e) {
                                     try {
                                         var detail = e.detail;
@@ -2677,6 +2683,9 @@ private fun FxaWebViewDialog(
                                                     // Capturing now would only buy an
                                                     // errno 138 from the token exchange.
                                                     window.__mozVpnPendingLogin = data;
+                                                    try {
+                                                        window.localStorage.setItem('__mozVpnPendingLogin', JSON.stringify(data));
+                                                    } catch (err) {}
                                                 } else if (window.MozillaVpnBridge) {
                                                     window.MozillaVpnBridge.onFxaLogin(data.email || '', data.sessionToken);
                                                 }
@@ -2686,6 +2695,9 @@ private fun FxaWebViewDialog(
                                             var token = data.sessionToken || pending.sessionToken;
                                             var email = data.email || pending.email || '';
                                             window.__mozVpnPendingLogin = null;
+                                            try {
+                                                window.localStorage.removeItem('__mozVpnPendingLogin');
+                                            } catch (err) {}
                                             if (token && window.MozillaVpnBridge) {
                                                 window.MozillaVpnBridge.onFxaLogin(email, token);
                                             }
