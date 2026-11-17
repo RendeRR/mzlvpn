@@ -64,8 +64,8 @@
 ## Сборка
 
 APK собирает GitHub Actions (`.github/workflows/build-apk.yml`), готовый
-файл — в релизе **v1.0.0-lite**:
-<https://github.com/RendeRR/mzlvpn/releases/tag/v1.0.0-lite>
+файл — на странице релизов (текущая версия — в файле `VERSION`):
+<https://github.com/RendeRR/mzlvpn/releases>
 
 Для локальной сборки нужны JDK 17+, Android SDK/NDK и Go: ядро
 компилируется в `core.aar` через gomobile, шрифты дизайна (Russo One,

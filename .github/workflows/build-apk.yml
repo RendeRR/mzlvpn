@@ -82,7 +82,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="v1.0.0-lite"
+          version="$(tr -d '[:space:]' < VERSION)"
+          tag="v$version"
           cat > release-notes.md <<'EOF'
           Неофициальный лёгкий Android-клиент Mozilla VPN / Firefox Private Network.
           Нативный Kotlin + Jetpack Compose, сетевое ядро на Go.
@@ -104,6 +105,6 @@ jobs:
           EOF
           gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$tag" out/*.apk \
-            --title "Mozilla VPN" \
+            --title "Mozilla VPN $version" \
             --notes-file release-notes.md
             

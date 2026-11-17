@@ -45,7 +45,9 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = 100 + ciRunNumber
-        versionName = "1.0.$ciRunNumber"
+        // Версия приложения — из файла VERSION в корне репозитория
+        // (единый источник для gradle и релизного тега в workflow).
+        versionName = rootProject.file("../VERSION").readText().trim()
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")

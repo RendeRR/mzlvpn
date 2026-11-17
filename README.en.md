@@ -67,8 +67,8 @@ not trigger. All facts and decisions are in [QUOTA.md](docs/QUOTA.md)
 ## Building
 
 The APK is built by GitHub Actions (`.github/workflows/build-apk.yml`);
-the ready file is in the **v1.0.0-lite** release:
-<https://github.com/RendeRR/mzlvpn/releases/tag/v1.0.0-lite>
+the ready file is on the releases page (current version — in `VERSION`):
+<https://github.com/RendeRR/mzlvpn/releases>
 
 A local build needs JDK 17+, the Android SDK/NDK and Go: the core is
 compiled into `core.aar` via gomobile, and the design fonts (Russo One,
