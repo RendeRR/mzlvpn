@@ -608,47 +608,79 @@ fun MozillaVpnLiteApp() {
         }
     }
 
+    // A session captured inside the WebView. The dialog stays open
+    // while the capture is pending: a registration session is not
+    // verified yet (the exchange answers "verify_email", errno 138)
+    // until the user enters the email code in that same WebView, so
+    // the effect below retries the exchange until FxA flips the
+    // session to verified — then the dialog closes by itself, the
+    // way the user expects.
+    var webViewCapture by remember { mutableStateOf<Pair<String, String>?>(null) }
+
     if (showWebViewDialog) {
         FxaWebViewDialog(
             initialEmail = emailInput.trim(),
-            onDismiss = { showWebViewDialog = false },
-            onSessionCaptured = { capturedEmail, capturedSessionToken ->
+            onDismiss = {
                 showWebViewDialog = false
+                webViewCapture = null
+                isSigningIn = false
+            },
+            onSessionCaptured = { capturedEmail, capturedSessionToken ->
                 if (capturedEmail.isNotBlank()) {
                     emailInput = capturedEmail
                 }
-                scope.launch {
-                    isSigningIn = true
-                    authMessage = msgCheckingSession
-                    authIsError = false
-                    val res = CoreBridge.addAccountSessionToken(
-                        capturedEmail.ifBlank { emailInput.trim() },
-                        capturedSessionToken
-                    )
-                    isSigningIn = false
-                    snap = CoreBridge.getSnapshot()
-                    when (res.state) {
-                        "ok" -> {
-                            authIsError = false
-                            authMessage = res.message
-                            authStepState = "idle"
-                            showAddForm = false
-                        }
-                        "verify_email", "verify_totp" -> {
-                            showAddForm = true
-                            authMethod = 0
-                            authStepState = res.state
-                            authIsError = false
-                            authMessage = res.message
-                        }
-                        else -> {
-                            authIsError = true
-                            authMessage = res.message
-                        }
-                    }
+                if (webViewCapture?.second != capturedSessionToken) {
+                    webViewCapture = capturedEmail to capturedSessionToken
                 }
             }
         )
+    }
+
+    LaunchedEffect(webViewCapture, showWebViewDialog) {
+        val capture = webViewCapture ?: return@LaunchedEffect
+        if (!showWebViewDialog) return@LaunchedEffect
+        isSigningIn = true
+        authMessage = msgCheckingSession
+        authIsError = false
+        var res = CoreBridge.addAccountSessionToken(
+            capture.first.ifBlank { emailInput.trim() },
+            capture.second
+        )
+        var attempts = 1
+        while (res.state == "verify_email" && attempts < 36 &&
+            webViewCapture != null && showWebViewDialog
+        ) {
+            delay(5000)
+            res = CoreBridge.addAccountSessionToken(
+                capture.first.ifBlank { emailInput.trim() },
+                capture.second
+            )
+            attempts++
+        }
+        if (webViewCapture == null || !showWebViewDialog) return@LaunchedEffect
+        isSigningIn = false
+        webViewCapture = null
+        showWebViewDialog = false
+        snap = CoreBridge.getSnapshot()
+        when (res.state) {
+            "ok" -> {
+                authIsError = false
+                authMessage = res.message
+                authStepState = "idle"
+                showAddForm = false
+            }
+            "verify_email", "verify_totp" -> {
+                showAddForm = true
+                authMethod = 0
+                authStepState = res.state
+                authIsError = false
+                authMessage = res.message
+            }
+            else -> {
+                authIsError = true
+                authMessage = res.message
+            }
+        }
     }
 }
 
@@ -2516,6 +2548,11 @@ private fun FxaWebViewDialog(
     }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var pageLoading by remember { mutableStateOf(true) }
+    // Temporary diagnostic (beta8): the last WebChannel event the FxA
+    // page broadcast, shown under the URL so a stuck capture can be
+    // diagnosed from a screenshot. Remove once the capture flow is
+    // proven in the field.
+    var lastFxaEvent by remember { mutableStateOf("") }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -2561,6 +2598,14 @@ private fun FxaWebViewDialog(
                         fontSize = 12.sp,
                         fontFamily = PriborFonts.mono(FontWeight.Normal)
                     )
+                    if (lastFxaEvent.isNotEmpty()) {
+                        Text(
+                            text = "fxa: $lastFxaEvent",
+                            color = InkSoft,
+                            fontSize = 10.sp,
+                            fontFamily = PriborFonts.mono(FontWeight.Normal)
+                        )
+                    }
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2629,6 +2674,11 @@ private fun FxaWebViewDialog(
                         addJavascriptInterface(
                             object {
                                 @JavascriptInterface
+                                fun onFxaEvent(label: String) {
+                                    post { lastFxaEvent = label }
+                                }
+
+                                @JavascriptInterface
                                 fun onFxaLogin(email: String, sessionToken: String) {
                                     if (sessionToken.length >= 32) {
                                         post {
@@ -2653,12 +2703,6 @@ private fun FxaWebViewDialog(
                             (function() {
                                 if (window.__mozVpnHooked) return;
                                 window.__mozVpnHooked = true;
-                                try {
-                                    var savedPending = window.localStorage.getItem('__mozVpnPendingLogin');
-                                    if (savedPending) {
-                                        window.__mozVpnPendingLogin = JSON.parse(savedPending);
-                                    }
-                                } catch (err) {}
                                 window.addEventListener('WebChannelMessageToChrome', function(e) {
                                     try {
                                         var detail = e.detail;
@@ -2708,30 +2752,31 @@ private fun FxaWebViewDialog(
                                                 })
                                             }));
                                             if (data.sessionToken) {
-                                                if (data.verified === false) {
-                                                    // Session not confirmed yet: FxA will
-                                                    // ask for the email/TOTP code on this very
-                                                    // page and then send fxaccounts:verified.
-                                                    // Capturing now would only buy an
-                                                    // errno 138 from the token exchange.
-                                                    window.__mozVpnPendingLogin = data;
-                                                    try {
-                                                        window.localStorage.setItem('__mozVpnPendingLogin', JSON.stringify(data));
-                                                    } catch (err) {}
-                                                } else if (window.MozillaVpnBridge) {
+                                                // Capture immediately, verified or
+                                                // not. An unverified session's token
+                                                // is final but not yet exchangeable
+                                                // (errno 138); the app side retries
+                                                // the exchange until FxA marks the
+                                                // session verified. The previous
+                                                // design — stash the token and wait
+                                                // for fxaccounts:verified — lost the
+                                                // capture in the field: after the
+                                                // code step FxA navigates to the
+                                                // success page, and its verified
+                                                // broadcast either never comes or
+                                                // fires in the new document before
+                                                // the hook is listening there.
+                                                if (window.MozillaVpnBridge) {
+                                                    window.MozillaVpnBridge.onFxaEvent('login · ' + (data.verified === false ? 'unverified' : 'verified') + ' · token');
                                                     window.MozillaVpnBridge.onFxaLogin(data.email || '', data.sessionToken);
                                                 }
                                             }
                                         } else if (cmd === 'fxaccounts:verified') {
-                                            var pending = window.__mozVpnPendingLogin || {};
-                                            var token = data.sessionToken || pending.sessionToken;
-                                            var email = data.email || pending.email || '';
-                                            window.__mozVpnPendingLogin = null;
-                                            try {
-                                                window.localStorage.removeItem('__mozVpnPendingLogin');
-                                            } catch (err) {}
-                                            if (token && window.MozillaVpnBridge) {
-                                                window.MozillaVpnBridge.onFxaLogin(email, token);
+                                            if (window.MozillaVpnBridge) {
+                                                window.MozillaVpnBridge.onFxaEvent('verified' + (data.sessionToken ? ' · token' : ' · no token'));
+                                                if (data.sessionToken) {
+                                                    window.MozillaVpnBridge.onFxaLogin(data.email || '', data.sessionToken);
+                                                }
                                             }
                                         }
                                     } catch (err) {}
