@@ -783,7 +783,6 @@ private fun QuotaDrum(fraction: Double, alarm: Boolean) {
  * заливается сигнальным оранжевым — «сеть под напряжением». Движение
  * ступенчатое, без пружин (tween 150 мс).
  */
-@Composable
 /** Мини-рубильник для карточки «Домашние сайты»: та же геометрия, что у
  * главного, — оранжевый сегмент и чёрная рукоять с насечками. */
 @Composable
@@ -977,6 +976,7 @@ private fun HomeCountryPickerScreen(
     }
 }
 
+@Composable
 private fun BreakerSwitch(
     isOn: Boolean,
     isConnecting: Boolean,
