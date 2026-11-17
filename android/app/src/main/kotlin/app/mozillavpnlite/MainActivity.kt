@@ -2796,6 +2796,18 @@ private fun FxaWebViewDialog(
                             ): Boolean = !isMozillaHost(request?.url?.host)
                         }
 
+                        // Start from a clean HTTP cache every time:
+                        // FxA loads its confirm-code step as a lazy JS
+                        // chunk, and a partial/corrupt cached copy of
+                        // that chunk makes every attempt fail with
+                        // "Loading chunk failed" while the same file
+                        // opens fine in a browser (field report,
+                        // 2026-11-18). The sign-in dialog is the app's
+                        // only WebView, so clearing the shared cache
+                        // costs nothing but a fresh download; cookies
+                        // and localStorage (the flow's state) are not
+                        // touched by clearCache.
+                        clearCache(true)
                         loadUrl(fxaUrl)
                     }
                 }
