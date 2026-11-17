@@ -816,9 +816,12 @@ private fun MiniBreakerToggle(checked: Boolean, onClick: () -> Unit) {
             .clickable { onClick() }
     ) {
         if (checked) {
+            // Оранжевый сегмент — weight, а не фикс. ширина: border рисуется
+            // ПОВЕРХ содержимого и ширину не съедает, поэтому 30+22 при
+            // рамке 56 давали 4 dp пустоты справа от рукояти (поле, бета1).
             Box(
                 modifier = Modifier
-                    .width(30.dp)
+                    .weight(1f)
                     .fillMaxHeight()
                     .background(Signal)
             )
