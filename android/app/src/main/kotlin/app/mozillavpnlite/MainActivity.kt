@@ -8,6 +8,7 @@ import android.net.VpnService
 import android.os.Bundle
 import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -2514,6 +2515,7 @@ private fun FxaWebViewDialog(
         if (initialEmail.isNotBlank()) "$base&email=${android.net.Uri.encode(initialEmail)}" else base
     }
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    var pageLoading by remember { mutableStateOf(true) }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -2580,13 +2582,20 @@ private fun FxaWebViewDialog(
                     .background(Ink)
             )
 
-            AndroidView(
+            Box(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+            ) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     WebView(ctx).apply {
                         webViewRef = this
+                        // Paper, not the default black: before the first
+                        // paint the WebView shows its background, and a
+                        // black flash over the paper UI reads as a bug.
+                        setBackgroundColor(0xFFF4F1EA.toInt())
                         CookieManager.getInstance().setAcceptCookie(true)
                         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                         settings.javaScriptEnabled = true
@@ -2735,8 +2744,20 @@ private fun FxaWebViewDialog(
 
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 super.onPageFinished(view, url)
+                                pageLoading = false
                                 if (isFxaPage(url)) {
                                     view?.evaluateJavascript(injectScript, null)
+                                }
+                            }
+
+                            override fun onReceivedError(
+                                view: WebView?,
+                                request: WebResourceRequest?,
+                                error: WebResourceError?
+                            ) {
+                                super.onReceivedError(view, request, error)
+                                if (request?.isForMainFrame == true) {
+                                    pageLoading = false
                                 }
                             }
 
@@ -2750,6 +2771,35 @@ private fun FxaWebViewDialog(
                     }
                 }
             )
+
+            if (pageLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Paper),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(22.dp),
+                            color = Signal,
+                            strokeWidth = 2.dp
+                        )
+                        Text(
+                            text = stringResource(R.string.webview_loading),
+                            color = InkSoft,
+                            fontSize = 12.sp,
+                            fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.5.sp
+                        )
+                    }
+                }
+            }
+            }
         }
     }
 }

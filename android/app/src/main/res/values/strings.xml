@@ -106,6 +106,7 @@
 
     <!-- WebView dialog -->
     <string name="webview_title">MOZILLA ACCOUNT SIGN-IN</string>
+    <string name="webview_loading">LOADING…</string>
 
     <!-- CoreBridge formatting and fallbacks -->
     <string name="unit_gb">%1$.2f GB</string>
