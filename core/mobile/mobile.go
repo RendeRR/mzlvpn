@@ -767,6 +767,30 @@ func SetThreshold(percent int) {
 	}
 }
 
+// SetBypassEnabled turns the home-country direct bypass on or off
+// and persists the choice.
+func SetBypassEnabled(enabled bool) {
+	mu.Lock()
+	bypassEnabled = enabled
+	mu.Unlock()
+	applyBypass()
+	saveSettings()
+}
+
+// SetHomeCountry chooses which country's addresses bypass the tunnel
+// (a geoip country code, e.g. "RU") and persists the choice.
+func SetHomeCountry(code string) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	if code == "" {
+		return
+	}
+	mu.Lock()
+	homeCountry = code
+	mu.Unlock()
+	applyBypass()
+	saveSettings()
+}
+
 func SetProtocol(proto string) {
 	mu.Lock()
 	selectedProtocol = proto
@@ -824,6 +848,8 @@ func StatusJSON() string {
 	isConn := connected
 	selCode := selectedCode
 	selProto := selectedProtocol
+	bypassOn := bypassEnabled
+	homeCC := homeCountry
 	curLoc := currentLocationLocked()
 	locsCopy := append([]serverlist.Location(nil), locations...)
 	mu.Unlock()
@@ -838,6 +864,8 @@ func StatusJSON() string {
 		"connected":         isConn,
 		"socks_port":        engine.Port(),
 		"selected_location": selCode,
+		"bypass":            bypassOn,
+		"home_country":      homeCC,
 		"tunnel_protocol":   selProto,
 		"location":          curLoc,
 		"threshold_percent": threshold,

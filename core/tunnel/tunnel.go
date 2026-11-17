@@ -41,6 +41,7 @@ import (
 
 	"golang.org/x/net/http2"
 	"mozillavpnlite/core/fxa"
+	"mozillavpnlite/core/geoip"
 )
 
 const copyBufSize = 32 * 1024
@@ -114,6 +115,8 @@ type Engine struct {
 	lastAuthFail   time.Time
 	deathMu        sync.Mutex
 	preDataDeaths  map[*http2.ClientConn]int
+	bypassMu       sync.RWMutex
+	bypassTable    *geoip.Table
 	OnTrafficBytes func(deltaBytes int64)
 	OnQuotaHeaders func(h http.Header)
 	OnQuotaExhaust func()
@@ -492,6 +495,23 @@ func (e *Engine) handleSocks5(client net.Conn) {
 	switch cmd {
 	case 0x01: // Standard TCP CONNECT
 		authority := net.JoinHostPort(host, strconv.Itoa(int(port)))
+		if e.shouldBypass(host) {
+			// Home-country bypass: dial directly. The app is excluded
+			// from its own TUN, so a plain dial leaves via the physical
+			// network — no proxy, no token, the user's real address.
+			remote, err := net.DialTimeout("tcp", authority, 12*time.Second)
+			if err != nil {
+				writeSocksReply(client, 0x05) // connection refused
+				return
+			}
+			defer remote.Close()
+			if err := writeSocksReply(client, 0x00); err != nil {
+				return
+			}
+			_ = client.SetDeadline(time.Time{})
+			e.relayDirect(client, remote)
+			return
+		}
 		// Open the upstream stream FIRST and only then report success:
 		// a success reply followed by an instant EOF makes hev/apps treat
 		// every site as reachable-but-broken and hides the real error.
@@ -522,6 +542,44 @@ func (e *Engine) handleSocks5(client net.Conn) {
 		// Includes UDP ASSOCIATE (0x03): not offered — hev runs with udp:'tcp'.
 		writeSocksReply(client, 0x07) // command not supported
 	}
+}
+
+// SetBypassTable installs (or clears, with nil) the home-country
+// prefix table consulted for every new TCP CONNECT.
+func (e *Engine) SetBypassTable(t *geoip.Table) {
+	e.bypassMu.Lock()
+	e.bypassTable = t
+	e.bypassMu.Unlock()
+}
+
+// shouldBypass reports whether a CONNECT to host must go direct.
+// host must be an IP literal: the table is address-based, and a
+// hostname's addresses are only known after (proxied) DNS anyway.
+func (e *Engine) shouldBypass(host string) bool {
+	e.bypassMu.RLock()
+	t := e.bypassTable
+	e.bypassMu.RUnlock()
+	if t == nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return t.Contains(ip)
+}
+
+// relayDirect pumps bytes between the SOCKS client and a directly
+// dialed connection (home-country bypass).
+func (e *Engine) relayDirect(client net.Conn, remote net.Conn) {
+	onBytes := e.OnTrafficBytes
+	go func() {
+		_ = copyZeroAlloc(remote, client, onBytes)
+		if tc, ok := remote.(*net.TCPConn); ok {
+			_ = tc.CloseWrite()
+		}
+	}()
+	_ = copyZeroAlloc(client, remote, onBytes)
 }
 
 // writeSocksReply sends a SOCKS5 reply with a zeroed IPv4 bind address.

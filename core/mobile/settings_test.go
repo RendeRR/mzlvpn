@@ -49,3 +49,37 @@ func TestSelectedLocationPersistsAcrossRestart(t *testing.T) {
 		t.Fatalf("settingsPath = %s", settingsPath)
 	}
 }
+
+// Bypass toggle and home country persist in the same settings file.
+func TestBypassSettingsPersistAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+
+	mu.Lock()
+	oldB, oldC, oldPath := bypassEnabled, homeCountry, settingsPath
+	bypassEnabled, homeCountry = false, "RU"
+	mu.Unlock()
+	defer func() {
+		mu.Lock()
+		bypassEnabled, homeCountry, settingsPath = oldB, oldC, oldPath
+		mu.Unlock()
+		applyBypass()
+	}()
+
+	loadSettings(dir) // establishes settingsPath in the fresh dir
+	SetBypassEnabled(true)
+	SetHomeCountry("KZ")
+
+	// Cold start: defaults first, then load restores both values.
+	mu.Lock()
+	bypassEnabled, homeCountry = false, "RU"
+	mu.Unlock()
+	engine.SetBypassTable(nil)
+	loadSettings(dir)
+
+	mu.Lock()
+	b, c := bypassEnabled, homeCountry
+	mu.Unlock()
+	if !b || c != "KZ" {
+		t.Fatalf("after restart bypass=%v country=%q, want true/KZ", b, c)
+	}
+}
