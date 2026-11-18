@@ -730,6 +730,10 @@ fun MozillaVpnLiteApp() {
                 showWebViewDialog = false
                 webViewCapture = null
                 isSigningIn = false
+                // The flow is abandoned: its status plate goes with
+                // it (a leftover "checking session" message here
+                // used to hang on the Accounts tab forever).
+                authMessage = null
             },
             onSessionCaptured = { capturedEmail, capturedSessionToken ->
                 if (capturedEmail.isNotBlank()) {
@@ -763,7 +767,15 @@ fun MozillaVpnLiteApp() {
             )
             attempts++
         }
-        if (webViewCapture == null || !showWebViewDialog) return@LaunchedEffect
+        if (webViewCapture == null || !showWebViewDialog) {
+            // The dialog went away mid-check (manual close): the
+            // exchange may well have succeeded in the core, but
+            // this flow owns the status plate — clear it instead
+            // of leaving "checking session" up forever.
+            isSigningIn = false
+            authMessage = null
+            return@LaunchedEffect
+        }
         isSigningIn = false
         webViewCapture = null
         showWebViewDialog = false
