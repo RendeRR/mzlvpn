@@ -25,9 +25,7 @@
     <!-- Home -->
     <string name="home_accounts">АКТИВНЫЕ АККАУНТЫ · %1$d</string>
     <string name="home_sites">ДОМАШНИЕ САЙТЫ</string>
-    <string name="theme_auto">АВТО</string>
-    <string name="theme_light">СВЕТЛАЯ</string>
-    <string name="theme_dark">ТЁМНАЯ</string>
+
     <string name="bypass_tunnel">ОБХОД ТУННЕЛЯ</string>
     <string name="your_country">ВАША СТРАНА</string>
     <string name="bypass_note_on">Банки, госуслуги и другие сайты вашей страны — напрямую, с вашего настоящего IP-адреса.</string>

@@ -425,20 +425,6 @@ fun MozillaVpnLiteApp() {
                 }
                 // Кнопка темы в углу шильдика: глиф показывает текущий
                 // режим, тап циклит АВТО → СВЕТЛАЯ → ТЁМНАЯ.
-                Text(
-                    text = stringResource(
-                        when (themeMode) {
-                            1 -> R.string.theme_light
-                            2 -> R.string.theme_dark
-                            else -> R.string.theme_auto
-                        }
-                    ),
-                    color = Signal,
-                    fontSize = 10.sp,
-                    fontFamily = PriborFonts.mono(FontWeight.SemiBold),
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 1.sp
-                )
                 ThemeButton(
                     mode = themeMode,
                     onClick = { saveThemeMode(context, (themeMode + 1) % 3) }
