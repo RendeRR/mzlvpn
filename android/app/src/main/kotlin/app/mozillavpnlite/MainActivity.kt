@@ -32,6 +32,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -43,10 +44,12 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -58,6 +61,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.delay
@@ -77,12 +81,56 @@ import kotlin.math.roundToInt
 //  - Данные: IBM Plex Mono (Regular/Medium/SemiBold), табличные цифры.
 // ============================================================================
 
-private val Paper = Color(0xFFF4F1EA)
-private val PaperDeep = Color(0xFFEBE5D8)
-private val Ink = Color(0xFF17130C)
-private val InkSoft = Color(0xFF554E40)
+// «Прибор» palettes. The color names below are read all over the
+// UI, so they are snapshot-state vars: applyPalette() swaps the
+// whole set and every composable reading them recomposes. Signal
+// is identical in both themes and stays a plain val.
+private val PaperLight = Color(0xFFF4F1EA)
+private val PaperDeepLight = Color(0xFFEBE5D8)
+private val InkLight = Color(0xFF17130C)
+private val InkSoftLight = Color(0xFF554E40)
+private val AlarmLight = Color(0xFFB3261E)
+
+// «Ночная панель»: the X "Dim" family as the base (background
+// #15202B, surfaces #1E2732, secondary text #8899A6), our paper
+// as the engraving color, Signal untouched. Alarm is lightened:
+// the light-theme red sinks into the dark background.
+private val PaperDark = Color(0xFF15202B)
+private val PaperDeepDark = Color(0xFF1E2732)
+private val InkDark = Color(0xFFF4F1EA)
+private val InkSoftDark = Color(0xFF8899A6)
+private val AlarmDark = Color(0xFFFF7A66)
+
+private var Paper by mutableStateOf(PaperLight)
+private var PaperDeep by mutableStateOf(PaperDeepLight)
+private var Ink by mutableStateOf(InkLight)
+private var InkSoft by mutableStateOf(InkSoftLight)
+private var Alarm by mutableStateOf(AlarmLight)
 private val Signal = Color(0xFFFF4D00)
-private val Alarm = Color(0xFFB3261E)
+
+private fun applyPalette(dark: Boolean) {
+    Paper = if (dark) PaperDark else PaperLight
+    PaperDeep = if (dark) PaperDeepDark else PaperDeepLight
+    Ink = if (dark) InkDark else InkLight
+    InkSoft = if (dark) InkSoftDark else InkSoftLight
+    Alarm = if (dark) AlarmDark else AlarmLight
+}
+
+// Theme mode: 0 = auto (follow the system), 1 = light, 2 = dark.
+// Chosen on the Console tab, persisted in SharedPreferences; the
+// resolved dark flag is recomputed in setContent from the mode
+// and isSystemInDarkTheme().
+private var themeMode by mutableStateOf(0)
+
+private fun loadThemeMode(context: Context): Int =
+    context.getSharedPreferences("ui", Context.MODE_PRIVATE)
+        .getInt("theme_mode", 0)
+
+private fun saveThemeMode(context: Context, mode: Int) {
+    themeMode = mode
+    context.getSharedPreferences("ui", Context.MODE_PRIVATE)
+        .edit().putInt("theme_mode", mode).apply()
+}
 
 private object PriborFonts {
     var display: FontFamily = FontFamily.Default
@@ -131,6 +179,20 @@ class MainActivity : ComponentActivity() {
         CoreBridge.init(this)
         PriborFonts.init(this)
 
+        // Apply the persisted theme before the first frame, so the
+        // app never flashes the wrong palette at a cold start.
+        themeMode = loadThemeMode(this)
+        val nightMask = resources.configuration.uiMode and
+            android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        applyPalette(
+            when (themeMode) {
+                1 -> false
+                2 -> true
+                else -> nightMask ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+            }
+        )
+
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 101)
@@ -138,14 +200,37 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
+            val systemDark = isSystemInDarkTheme()
+            val dark = when (themeMode) {
+                1 -> false
+                2 -> true
+                else -> systemDark
+            }
+            val view = LocalView.current
+            SideEffect {
+                applyPalette(dark)
+                val controller = WindowCompat.getInsetsController(window, view)
+                controller.isAppearanceLightStatusBars = !dark
+                controller.isAppearanceLightNavigationBars = !dark
+            }
             MaterialTheme(
-                colorScheme = lightColorScheme(
-                    primary = Ink,
-                    background = Paper,
-                    surface = Paper,
-                    onBackground = Ink,
-                    onSurface = Ink
-                )
+                colorScheme = if (dark) {
+                    darkColorScheme(
+                        primary = Ink,
+                        background = Paper,
+                        surface = Paper,
+                        onBackground = Ink,
+                        onSurface = Ink
+                    )
+                } else {
+                    lightColorScheme(
+                        primary = Ink,
+                        background = Paper,
+                        surface = Paper,
+                        onBackground = Ink,
+                        onSurface = Ink
+                    )
+                }
             ) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -1663,7 +1748,24 @@ private fun HomeTabScreen(
             }
         }
 
-        // 1b. Домашние сайты: адреса выбранной страны идут напрямую,
+        // 1b. Тема оформления: светлая «бумага» или «ночная панель»
+        // (палитра X Dim); АВТО следует за системной темой.
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SectionLabel(stringResource(R.string.console_theme))
+                SegmentedBreaker(
+                    options = listOf(
+                        stringResource(R.string.theme_auto),
+                        stringResource(R.string.theme_light),
+                        stringResource(R.string.theme_dark)
+                    ),
+                    selectedIndex = themeMode,
+                    onSelect = { idx -> saveThemeMode(context, idx) }
+                )
+            }
+        }
+
+        // 1c. Домашние сайты: адреса выбранной страны идут напрямую,
         // в обход туннеля (geoip в ядре; основной кейс — госуслуги и банки).
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2661,7 +2763,7 @@ private fun FxaWebViewDialog(
                         // Paper, not the default black: before the first
                         // paint the WebView shows its background, and a
                         // black flash over the paper UI reads as a bug.
-                        setBackgroundColor(0xFFF4F1EA.toInt())
+                        setBackgroundColor(Paper.toArgb())
                         CookieManager.getInstance().setAcceptCookie(true)
                         CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                         settings.javaScriptEnabled = true

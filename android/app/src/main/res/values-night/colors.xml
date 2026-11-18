@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- «Прибор» palette for non-Compose surfaces, night variant
+     («ночная панель» on the X Dim base). Android applies this
+     file automatically when the system is in dark mode; the
+     in-app theme switch cannot reach widget resources, so the
+     widget follows the system theme. Keep in sync with the
+     dark palette in MainActivity.kt. -->
+<resources>
+    <color name="pribor_paper">#15202B</color>
+    <color name="pribor_paper_deep">#1E2732</color>
+    <color name="pribor_ink">#F4F1EA</color>
+    <color name="pribor_ink_soft">#8899A6</color>
+    <color name="pribor_signal">#FF4D00</color>
+</resources>

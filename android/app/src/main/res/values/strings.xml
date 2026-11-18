@@ -25,6 +25,10 @@
     <!-- Home -->
     <string name="home_accounts">ACTIVE ACCOUNTS · %1$d</string>
     <string name="home_sites">HOME SITES</string>
+    <string name="console_theme">THEME</string>
+    <string name="theme_auto">AUTO</string>
+    <string name="theme_light">LIGHT</string>
+    <string name="theme_dark">DARK</string>
     <string name="bypass_tunnel">TUNNEL BYPASS</string>
     <string name="your_country">YOUR COUNTRY</string>
     <string name="bypass_note_on">Banks, government services and other sites of your country go direct — from your real IP address.</string>
