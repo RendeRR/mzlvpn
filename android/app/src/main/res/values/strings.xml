@@ -25,7 +25,6 @@
     <!-- Home -->
     <string name="home_accounts">ACTIVE ACCOUNTS · %1$d</string>
     <string name="home_sites">HOME SITES</string>
-    <string name="console_theme">THEME</string>
     <string name="theme_auto">AUTO</string>
     <string name="theme_light">LIGHT</string>
     <string name="theme_dark">DARK</string>

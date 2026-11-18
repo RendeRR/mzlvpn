@@ -43,11 +43,16 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.drawscope.Stroke
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.TextStyle
@@ -397,21 +402,46 @@ fun MozillaVpnLiteApp() {
                 )
             }
 
-            if (snap.state == "connected" && activeLocation != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (snap.state == "connected" && activeLocation != null) {
+                    Text(
+                        text = if (snap.selectedLocation == "recommended") "REC · Anycast"
+                            else "${activeLocation.code} · ${CoreBridge.formatPing(activeLocation.latencyMs)}",
+                        color = Ink,
+                        fontSize = 14.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.SemiBold),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.state_off),
+                        color = InkSoft,
+                        fontSize = 14.sp,
+                        fontFamily = PriborFonts.mono(FontWeight.Normal)
+                    )
+                }
+                // Кнопка темы в углу шильдика: глиф показывает текущий
+                // режим, тап циклит АВТО → СВЕТЛАЯ → ТЁМНАЯ.
                 Text(
-                    text = if (snap.selectedLocation == "recommended") "REC · Anycast"
-                        else "${activeLocation.code} · ${CoreBridge.formatPing(activeLocation.latencyMs)}",
-                    color = Ink,
-                    fontSize = 14.sp,
+                    text = stringResource(
+                        when (themeMode) {
+                            1 -> R.string.theme_light
+                            2 -> R.string.theme_dark
+                            else -> R.string.theme_auto
+                        }
+                    ),
+                    color = Signal,
+                    fontSize = 10.sp,
                     fontFamily = PriborFonts.mono(FontWeight.SemiBold),
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp
                 )
-            } else {
-                Text(
-                    text = stringResource(R.string.state_off),
-                    color = InkSoft,
-                    fontSize = 14.sp,
-                    fontFamily = PriborFonts.mono(FontWeight.Normal)
+                ThemeButton(
+                    mode = themeMode,
+                    onClick = { saveThemeMode(context, (themeMode + 1) % 3) }
                 )
             }
         }
@@ -1462,6 +1492,74 @@ private fun CodeCells(
     }
 }
 
+/**
+ * Кнопка темы в углу шильдика: квадрат 32dp, внутри пиктограмма
+ * текущего режима — полузалитый круг (АВТО), солнце (СВЕТЛАЯ),
+ * луна (ТЁМНАЯ). Луна вырезана кругом цвета фона: кнопка живёт
+ * только на шильдике, фон под ней всегда Paper.
+ */
+@Composable
+private fun ThemeButton(mode: Int, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .border(BorderStroke(2.dp, Ink), RectangleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.size(18.dp)) {
+            val c = center
+            when (mode) {
+                1 -> {
+                    drawCircle(color = Ink, radius = 3.4.dp.toPx(), center = c)
+                    for (i in 0 until 8) {
+                        val a = i * PI / 4
+                        val r1 = 5.4.dp.toPx()
+                        val r2 = 7.6.dp.toPx()
+                        drawLine(
+                            color = Ink,
+                            start = Offset(
+                                c.x + (r1 * cos(a)).toFloat(),
+                                c.y + (r1 * sin(a)).toFloat()
+                            ),
+                            end = Offset(
+                                c.x + (r2 * cos(a)).toFloat(),
+                                c.y + (r2 * sin(a)).toFloat()
+                            ),
+                            strokeWidth = 1.6.dp.toPx()
+                        )
+                    }
+                }
+                2 -> {
+                    drawCircle(color = Ink, radius = 7.dp.toPx(), center = c)
+                    drawCircle(
+                        color = Paper,
+                        radius = 5.8.dp.toPx(),
+                        center = Offset(c.x + 3.2.dp.toPx(), c.y - 1.6.dp.toPx())
+                    )
+                }
+                else -> {
+                    val r = 6.5.dp.toPx()
+                    drawCircle(
+                        color = Ink,
+                        radius = r,
+                        center = c,
+                        style = Stroke(width = 1.8.dp.toPx())
+                    )
+                    drawArc(
+                        color = Ink,
+                        startAngle = 90f,
+                        sweepAngle = 180f,
+                        useCenter = true,
+                        topLeft = Offset(c.x - r, c.y - r),
+                        size = Size(r * 2, r * 2)
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** Сегментный переключатель в виде рубильной полосы (2..3 сегмента). */
 @Composable
 private fun SegmentedBreaker(
@@ -1748,25 +1846,7 @@ private fun HomeTabScreen(
             }
         }
 
-        // 1b. Тема оформления: светлая «бумага» или «ночная панель»
-        // (палитра X Dim); АВТО следует за системной темой.
-        item {
-            val themeContext = LocalContext.current
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                SectionLabel(stringResource(R.string.console_theme))
-                SegmentedBreaker(
-                    options = listOf(
-                        stringResource(R.string.theme_auto),
-                        stringResource(R.string.theme_light),
-                        stringResource(R.string.theme_dark)
-                    ),
-                    selectedIndex = themeMode,
-                    onSelect = { idx -> saveThemeMode(themeContext, idx) }
-                )
-            }
-        }
-
-        // 1c. Домашние сайты: адреса выбранной страны идут напрямую,
+        // 1b. Домашние сайты: адреса выбранной страны идут напрямую,
         // в обход туннеля (geoip в ядре; основной кейс — госуслуги и банки).
         item {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
