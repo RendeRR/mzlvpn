@@ -727,12 +727,16 @@ func TestPreDataDeathNeedsTwoStrikes(t *testing.T) {
 
 func TestSocksConnectRejectedReportsFailure(t *testing.T) {
 	proxy := startTestProxy(t)
-	proxy.rejectHosts["10.0.0.1:443"] = true
+	// The destination must be PUBLIC (TEST-NET-2): local addresses
+	// bypass the proxy by design since 1.1.1-beta5 and would never
+	// reach the rejecting proxy — with 10.0.0.1 this test passed
+	// only where that dial failed fast and hung on CI runners.
+	proxy.rejectHosts["198.51.100.23:443"] = true
 	_, port := startTestEngine(t, proxy)
 
 	conn := dialSocks(t, port)
 	socksGreeting(t, conn)
-	rep := socksRequest(t, conn, 0x01, net.ParseIP("10.0.0.1"), 443)
+	rep := socksRequest(t, conn, 0x01, net.ParseIP("198.51.100.23"), 443)
 	if rep == 0x00 {
 		t.Fatal("rejected CONNECT must not report SOCKS success")
 	}
