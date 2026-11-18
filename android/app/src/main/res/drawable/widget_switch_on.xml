@@ -11,34 +11,34 @@
     android:viewportHeight="62">
     <!-- plate: rounded square (shape В, chosen by the user) -->
     <path
-        android:fillColor="@color/pribor_paper"
-        android:strokeColor="@color/pribor_ink"
+        android:fillColor="#F4F1EA"
+        android:strokeColor="#17130C"
         android:strokeWidth="3"
         android:pathData="M14.5,1.5h33a13,13 0 0 1 13,13v33a13,13 0 0 1 -13,13h-33a13,13 0 0 1 -13,-13v-33a13,13 0 0 1 13,-13z" />
     <!-- slider guides: end stops -->
     <path
-        android:fillColor="@color/pribor_ink"
+        android:fillColor="#17130C"
         android:pathData="M8,21h3.5v20H8z" />
     <path
-        android:fillColor="@color/pribor_ink"
+        android:fillColor="#17130C"
         android:pathData="M50.5,21H54v20h-3.5z" />
     <!-- guides: top and bottom rails -->
     <path
-        android:fillColor="@color/pribor_ink"
+        android:fillColor="#17130C"
         android:pathData="M8,21h46v2.5H8z" />
     <path
-        android:fillColor="@color/pribor_ink"
+        android:fillColor="#17130C"
         android:pathData="M8,38.5h46V41H8z" />
     <!-- orange ON zone -->
     <path
-        android:fillColor="@color/pribor_signal"
+        android:fillColor="#FF4D00"
         android:pathData="M11.5,23.5H30v15H11.5z" />
     <!-- slider -->
     <path
-        android:fillColor="@color/pribor_ink"
+        android:fillColor="#17130C"
         android:pathData="M28,22h18v18H28z" />
     <!-- rivet -->
     <path
-        android:fillColor="@color/pribor_signal"
+        android:fillColor="#FF4D00"
         android:pathData="M48,48h6v6h-6z" />
 </vector>

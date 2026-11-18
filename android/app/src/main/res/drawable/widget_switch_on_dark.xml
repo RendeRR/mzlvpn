@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark variant («ночная панель», X Dim): same geometry as the light pictogram, hardcoded dark palette. The provider picks the variant in code — RemoteViews are inflated by the launcher under the SYSTEM configuration, so resource qualifiers cannot follow the app theme mode. -->
+<!-- Widget pictogram, ON: the app launcher icon itself
+     (ic_launcher_foreground geometry), reframed so the plate
+     fills the viewport — the widget IS the icon, per the user's
+     spec (mockup approved 2026-11-15): orange ON zone on the
+     left, black slider on the right, orange rivet. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="62dp"
+    android:height="62dp"
+    android:viewportWidth="62"
+    android:viewportHeight="62">
+    <!-- plate: rounded square (shape В, chosen by the user) -->
+    <path
+        android:fillColor="#15202B"
+        android:strokeColor="#F4F1EA"
+        android:strokeWidth="3"
+        android:pathData="M14.5,1.5h33a13,13 0 0 1 13,13v33a13,13 0 0 1 -13,13h-33a13,13 0 0 1 -13,-13v-33a13,13 0 0 1 13,-13z" />
+    <!-- slider guides: end stops -->
+    <path
+        android:fillColor="#F4F1EA"
+        android:pathData="M8,21h3.5v20H8z" />
+    <path
+        android:fillColor="#F4F1EA"
+        android:pathData="M50.5,21H54v20h-3.5z" />
+    <!-- guides: top and bottom rails -->
+    <path
+        android:fillColor="#F4F1EA"
+        android:pathData="M8,21h46v2.5H8z" />
+    <path
+        android:fillColor="#F4F1EA"
+        android:pathData="M8,38.5h46V41H8z" />
+    <!-- orange ON zone -->
+    <path
+        android:fillColor="#FF4D00"
+        android:pathData="M11.5,23.5H30v15H11.5z" />
+    <!-- slider -->
+    <path
+        android:fillColor="#F4F1EA"
+        android:pathData="M28,22h18v18H28z" />
+    <!-- rivet -->
+    <path
+        android:fillColor="#FF4D00"
+        android:pathData="M48,48h6v6h-6z" />
+</vector>

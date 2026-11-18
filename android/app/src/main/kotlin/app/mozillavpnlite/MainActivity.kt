@@ -427,7 +427,12 @@ fun MozillaVpnLiteApp() {
                 // режим, тап циклит АВТО → СВЕТЛАЯ → ТЁМНАЯ.
                 ThemeButton(
                     mode = themeMode,
-                    onClick = { saveThemeMode(context, (themeMode + 1) % 3) }
+                    onClick = {
+                        saveThemeMode(context, (themeMode + 1) % 3)
+                        // Repaint the home-screen widget right away —
+                        // it follows the app mode now, not the system.
+                        VpnWidgetViews.refresh(context)
+                    }
                 )
             }
         }
