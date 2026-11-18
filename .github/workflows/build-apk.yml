@@ -106,6 +106,11 @@ jobs:
         run: |
           version="$(tr -d '[:space:]' < VERSION)"
           tag="v$version"
+          if [ -f "release-notes-$version.md" ]; then
+            # Per-version release notes committed with the release;
+            # versions without such a file get the generic text below.
+            cp "release-notes-$version.md" release-notes.md
+          else
           cat > release-notes.md <<'EOF'
           Неофициальный лёгкий Android-клиент Mozilla VPN / Firefox Private Network.
           Нативный Kotlin + Jetpack Compose, сетевое ядро на Go.
@@ -125,6 +130,7 @@ jobs:
           Network. Native Kotlin + Jetpack Compose with a Go networking core.
           Requires a Mozilla account with VPN/FPN access; not affiliated with Mozilla.
           EOF
+          fi
           gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$tag" out/*.apk \
             --title "Mozilla VPN $version" \
