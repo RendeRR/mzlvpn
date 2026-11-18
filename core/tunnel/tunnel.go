@@ -496,7 +496,8 @@ func (e *Engine) handleSocks5(client net.Conn) {
 	case 0x01: // Standard TCP CONNECT
 		authority := net.JoinHostPort(host, strconv.Itoa(int(port)))
 		if e.shouldBypass(host) {
-			// Home-country bypass: dial directly. The app is excluded
+			// Bypass (home country or local address): dial directly.
+			// The app is excluded
 			// from its own TUN, so a plain dial leaves via the physical
 			// network — no proxy, no token, the user's real address.
 			remote, err := net.DialTimeout("tcp", authority, 12*time.Second)
@@ -553,18 +554,35 @@ func (e *Engine) SetBypassTable(t *geoip.Table) {
 	e.bypassMu.Unlock()
 }
 
+// cgnatRange is the RFC 6598 shared address space. Go's
+// IP.IsPrivate does not cover it, but carrier NAT space is local
+// for our purposes: it can only ever name the user's own
+// ISP-side infrastructure, never a public destination.
+var cgnatRange = func() *net.IPNet {
+	_, n, _ := net.ParseCIDR("100.64.0.0/10")
+	return n
+}()
+
 // shouldBypass reports whether a CONNECT to host must go direct.
-// host must be an IP literal: the table is address-based, and a
+// Local addresses (RFC 1918, CGNAT, loopback, link-local) ALWAYS
+// go direct, table or no table: a proxy egress can never reach
+// the user's own LAN, and the home router must stay reachable
+// with the VPN up. Otherwise host must be an IP literal inside
+// the installed table: the table is address-based, and a
 // hostname's addresses are only known after (proxied) DNS anyway.
 func (e *Engine) shouldBypass(host string) bool {
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() ||
+		cgnatRange.Contains(ip) {
+		return true
+	}
 	e.bypassMu.RLock()
 	t := e.bypassTable
 	e.bypassMu.RUnlock()
 	if t == nil {
-		return false
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
 		return false
 	}
 	return t.Contains(ip)

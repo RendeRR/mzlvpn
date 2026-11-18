@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
+import android.net.IpPrefix
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
@@ -18,6 +19,7 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import org.json.JSONObject
 import java.io.File
+import java.net.InetAddress
 
 class MinimalVpnService : VpnService() {
 
@@ -216,6 +218,21 @@ class MinimalVpnService : VpnService() {
             .addDnsServer("1.1.1.1")
             .addDnsServer("8.8.8.8")
 
+        // Local addresses stay out of the tunnel (API 33+): the home
+        // router and the LAN must be reachable with the VPN up, ICMP
+        // included. On older APIs the core still dials local
+        // destinations directly at the SOCKS layer, so LAN access
+        // works there too — packets just take the scenic route
+        // through hev. A failure here must never cost the whole
+        // tunnel: keep whatever exclusions succeeded and carry on.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            for ((addr, prefix) in LAN_RANGES) {
+                try {
+                    builder.excludeRoute(IpPrefix(InetAddress.getByName(addr), prefix))
+                } catch (_: Exception) {}
+            }
+        }
+
         // Exclude our own app so HTTP/2 CONNECT to Fastly goes directly over the physical network
         try {
             builder.addDisallowedApplication(packageName)
@@ -373,6 +390,17 @@ class MinimalVpnService : VpnService() {
         const val ACTION_REFRESH_NOTIF = "app.mozillavpnlite.REFRESH_NOTIF"
         private const val CHANNEL_ID = "mozilla_vpn_lite_status"
         private const val NOTIFICATION_ID = 1001
+
+        /** Address ranges that are never proxied: RFC 1918, CGNAT
+         *  (RFC 6598) and link-local. Mirrors the core's always-on
+         *  local bypass in shouldBypass (core/tunnel). */
+        private val LAN_RANGES = listOf(
+            "10.0.0.0" to 8,
+            "172.16.0.0" to 12,
+            "192.168.0.0" to 16,
+            "100.64.0.0" to 10,
+            "169.254.0.0" to 16
+        )
 
         private val startGeneration = java.util.concurrent.atomic.AtomicInteger(0)
 
