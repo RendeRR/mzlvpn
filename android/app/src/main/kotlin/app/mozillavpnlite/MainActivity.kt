@@ -1751,6 +1751,7 @@ private fun HomeTabScreen(
         // 1b. Тема оформления: светлая «бумага» или «ночная панель»
         // (палитра X Dim); АВТО следует за системной темой.
         item {
+            val themeContext = LocalContext.current
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SectionLabel(stringResource(R.string.console_theme))
                 SegmentedBreaker(
@@ -1760,7 +1761,7 @@ private fun HomeTabScreen(
                         stringResource(R.string.theme_dark)
                     ),
                     selectedIndex = themeMode,
-                    onSelect = { idx -> saveThemeMode(context, idx) }
+                    onSelect = { idx -> saveThemeMode(themeContext, idx) }
                 )
             }
         }
